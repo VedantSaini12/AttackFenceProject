@@ -10,7 +10,7 @@ The project is made in streamlit, and some basic steps need to be initialised be
   ```
   .venv\Scripts\activate.bat
   ```
-#### Note: This is for Windows CMD and it may differ for zshell and bash users. Kindly refer to [Streamlit Integration Docs](https://docs.streamlit.io/get-started/installation) for your specific OS.
+⚠️ Note: This is for Windows CMD and it may differ for zshell and bash users. Kindly refer to [Streamlit Integration Docs](https://docs.streamlit.io/get-started/installation) for your specific OS.
 
 2. **Install Dependencies**:
    - Install the required Python packages by running:
