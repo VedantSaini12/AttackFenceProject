@@ -688,6 +688,5 @@ else:
 # Add logout button
 st.write("---")
 if st.button("⚠️ Logout",type="primary"):
-    st.session_state.clear()
     st.stop
     st.switch_page("Home.py")
