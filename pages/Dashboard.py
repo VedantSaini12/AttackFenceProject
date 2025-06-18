@@ -573,7 +573,7 @@ elif user[3] == "admin":
     st.write("## Manage Employees")
     if st.button("Go to Employee Management"):
         st.switch_page("pages/Admin.py")
-elif user[3] == "hr":
+elif user[3] == "HR":
     @st.dialog("Confirmation")
     def add_submit(emp_name):
         st.success(f"Created new user: {emp_name}")
@@ -661,12 +661,33 @@ elif user[3] == "hr":
                         )
                     db.commit()
                     confirm_submit()
+        # Add button to view all ratings page
+        st.write("---")
+        st.subheader("View All Employee Ratings")
+        # Display employee cards in a grid (3 per row)
+        card_cols = st.columns(3)
+        for idx, emp in enumerate(employees):
+            emp_username, emp_name, emp_role, emp_manager = emp
+            with card_cols[idx % 3]:
+                with st.container(border=True):
+                    st.subheader(emp_name)
+                    st.write(f"**Role:** {emp_role.title()}")
+                    st.write(f"**Email:** {emp_username}")
+                    st.write(f"**Manager:** {emp_manager if emp_manager else 'N/A'}")
+                    if st.button(
+                        "View Ratings  ↗",
+                        key=f"view_ratings_{emp_username}",
+                        use_container_width=True,
+                        help="View rating summary for this employee"
+                    ):
+                        st.session_state["selected_employee"] = emp_name
+                        st.switch_page("pages/Rating.py")
 else:
     st.write("Unknown role.")
 
 # Add logout button
 st.write("---")
-if st.button("Logout",type="primary"):
+if st.button("⚠️ Logout",type="primary"):
     st.session_state.clear()
     st.stop
     st.switch_page("Home.py")
