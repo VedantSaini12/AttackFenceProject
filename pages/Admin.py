@@ -5,7 +5,7 @@ import mysql.connector as connector
 db = connector.connect(
     host="localhost", 
     user="root",
-    password="password",  
+    password="sqladi@2710",  
     database="auth" )
 cursor = db.cursor()
 st.write("<center><h1>Admin Page</h1></center>", unsafe_allow_html=True)

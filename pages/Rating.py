@@ -29,7 +29,7 @@ try:
     db = connector.connect(
         host="localhost",
         user="root",
-        password="password"
+        password="sqladi@2710"
     )
     cursor = db.cursor()
     cursor.execute("USE auth")

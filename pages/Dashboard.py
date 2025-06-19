@@ -1,5 +1,4 @@
 import streamlit as st
-import hashlib
 import bcrypt
 import mysql.connector as connector
 
@@ -13,7 +12,7 @@ except:
 db = connector.connect(
         host="localhost",         # change if needed
         user="root",              # your MySQL Email
-        password="password", # your MySQL password
+        password="sqladi@2710", # your MySQL password
     )
 cursor = db.cursor()
 cursor.execute("USE auth")
@@ -92,6 +91,14 @@ if user[3] == "employee":
                             f"</div>",
                             unsafe_allow_html=True
                         )
+            st.divider()
+            cursor.execute("SELECT remark FROM remarks WHERE ratee = %s AND rating_type = 'admin';", (name, ))
+            feedback = cursor.fetchone()
+            st.subheader("Remark:")
+            if feedback:
+                st.write(feedback[0])
+            else:
+                st.write("No remarks found.")
         else:
             st.info("No admin ratings received yet.")
 
@@ -127,6 +134,14 @@ if user[3] == "employee":
                             f"</div>",
                             unsafe_allow_html=True
                         )
+            st.divider()
+            cursor.execute("SELECT remark FROM remarks WHERE ratee = %s AND rating_type = 'manager';", (name, ))
+            feedback = cursor.fetchone()
+            st.subheader("Remark:")
+            if feedback:
+                st.write(feedback[0])
+            else:
+                st.write("No remarks found.")
         else:
             st.info("No manager ratings received yet.")
     ratings = cursor.fetchall()
@@ -281,6 +296,14 @@ elif user[3] == "manager":
                             f"</div>",
                             unsafe_allow_html=True
                         )
+            st.write("---")
+            cursor.execute("SELECT remark FROM remarks WHERE ratee = %s AND rating_type = 'admin';", (name, ))   
+            feedback = cursor.fetchone()
+            st.subheader("Remark:")
+            if feedback:
+                st.write(feedback[0])
+            else:
+                st.info("No remarks found.")
         else:
             st.info("No admin ratings received yet.")
     st.write("---")
@@ -337,6 +360,14 @@ elif user[3] == "manager":
                                     f"**{crit}**: {score}/10  \n<small>(submitted on {timestamp.strftime('%Y-%m-%d %H:%M')})</small>",
                                     unsafe_allow_html=True
                                 )
+                    st.divider()
+                    cursor.execute("SELECT remark FROM remarks WHERE rater = %s AND ratee = %s AND rating_type = 'manager';", (name, emp[0]))
+                    feedback = cursor.fetchone()
+                    st.subheader("Remark:")
+                    if feedback:
+                        st.write(feedback[0])
+                    else:
+                        st.write("No remarks found.")
                 else:
                     st.write("### Foundational Progress")
                     
@@ -352,6 +383,9 @@ elif user[3] == "manager":
                         futuristic_scores[crit] = st.slider(
                             f"{crit} ({weight}%)", 0, 10, 0, key=f"{emp[0]}_{crit}_fut_manager"
                         )
+                    # Add a text area for remarks/feedback
+                    st.write("### Add Remark/Feedback")
+                    remark = st.text_area(label="Remark", placeholder="Enter your feedback here...", key=f"remark_{emp[0]}")
                     @st.dialog("Confirmation")
                     def confirm_submit():
                         st.success(f"Ranking submitted for {emp[0]}")
@@ -368,6 +402,10 @@ elif user[3] == "manager":
                             cursor.execute(
                                 "INSERT INTO user_ratings (rater, ratee, role, criteria, score, rating_type) VALUES (%s, %s, %s, %s, %s, %s)",
                                 (name, emp[0], user[3], crit, score, "manager")
+                            )
+                        cursor.execute(
+                                "INSERT INTO remarks (rater, ratee, rating_type, remark) VALUES (%s, %s, %s, %s)",
+                                (name, emp[0], "manager", remark)
                             )
                         db.commit()
                         confirm_submit()
@@ -433,6 +471,14 @@ elif user[3] == "manager":
                             f"**{crit}**: {score}/10  \n<small>(submitted on {timestamp.strftime('%Y-%m-%d %H:%M')})</small>",
                             unsafe_allow_html=True
                         )
+            st.write("---")
+            cursor.execute("SELECT remark FROM remarks WHERE rater = %s AND ratee = %s AND rating_type = 'admin';", (name, emp[0]))   
+            feedback = cursor.fetchone()
+            st.subheader("Remark:")
+            if feedback:
+                st.write(feedback[0])
+            else:
+                st.write("No remarks found.")
         else:
             foundational_scores = {}
             st.write("### Foundational Progress")
@@ -505,6 +551,7 @@ elif user[3] == "admin":
             WHERE rater = %s AND ratee = %s ORDER BY timestamp DESC
         """, (name, emp[0]))
                 self_ratings = cursor.fetchall()
+                print(self_ratings)
                 all_criteria = [crit for crit, _ in foundational_criteria + futuristic_criteria]
                 submitted_criteria = set([crit for crit, _, _ in self_ratings])
                 if set(all_criteria).issubset(submitted_criteria):
@@ -532,6 +579,15 @@ elif user[3] == "admin":
                                     f"**{crit}**: {score}/10  \n<small>(submitted on {timestamp.strftime('%Y-%m-%d %H:%M')})</small>",
                                     unsafe_allow_html=True
                                 )
+                    st.write("---")
+                    cursor.execute("SELECT remark FROM remarks WHERE rater = %s AND ratee = %s AND rating_type = 'admin';", (name, emp[0]))   
+                    feedback = cursor.fetchone()
+                    st.subheader("Remark:")
+                    if feedback:
+                        st.write(feedback[0])
+                    else:
+                        st.write("No remarks found.")
+
                 else:
                     st.write("### Foundational Progress")
                     
@@ -547,6 +603,9 @@ elif user[3] == "admin":
                         futuristic_scores[crit] = st.slider(
                             f"{crit} ({weight}%)", 0, 10, 0, key=f"{emp[0]}_{crit}_fut_manager"
                         )
+                    # Add a text area for remarks/feedback
+                    st.write("### Add Remark/Feedback")
+                    remark = st.text_area(label="Remark", placeholder="Enter your feedback here...", key=f"remark_{emp[0]}")
                     @st.dialog("Confirmation")
                     def confirm_submit():
                         st.success(f"Ranking submitted for {emp[0]}")
@@ -564,6 +623,10 @@ elif user[3] == "admin":
                                 "INSERT INTO user_ratings (rater, ratee, role, criteria, score, rating_type) VALUES (%s, %s, %s, %s, %s, %s)",
                                 (name, emp[0], user[3], crit, score, "admin")
                             )
+                        cursor.execute(
+                            "INSERT INTO remarks (rater, ratee, rating_type, remark) VALUES (%s, %s, %s, %s)",
+                            (name, emp[0], "admin", remark)
+                        )
                         db.commit()
                         confirm_submit()
     else:
@@ -664,9 +727,35 @@ elif user[3] == "HR":
         # Add button to view all ratings page
         st.write("---")
         st.subheader("View All Employee Ratings")
+        # Search bar for employees
+        search_query = st.text_input("🔍 Search Employee by Name or Email", value="", key="search_employee")
+        filtered_employees = [
+            emp for emp in employees
+            if search_query.lower() in emp[1].lower()] if search_query else employees
+
+        # Pagination setup
+        page_size = 9
+        total_employees = len(filtered_employees)
+        total_pages = (total_employees + page_size - 1) // page_size
+
+        if "employee_page" not in st.session_state:
+            st.session_state["employee_page"] = 1
+
+        # Reset page if search changes
+        if search_query and st.session_state.get("last_search_query") != search_query:
+            st.session_state["employee_page"] = 1
+        st.session_state["last_search_query"] = search_query
+
+        current_page = st.session_state["employee_page"]
+        start_idx = (current_page - 1) * page_size
+        end_idx = start_idx + page_size
+        employees_to_show = filtered_employees[start_idx:end_idx]
+        if not employees_to_show:
+            st.warning("No employees found matching your search criteria.")
+
         # Display employee cards in a grid (3 per row)
         card_cols = st.columns(3)
-        for idx, emp in enumerate(employees):
+        for idx, emp in enumerate(employees_to_show):
             emp_username, emp_name, emp_role, emp_manager = emp
             with card_cols[idx % 3]:
                 with st.container(border=True):
@@ -675,18 +764,53 @@ elif user[3] == "HR":
                     st.write(f"**Email:** {emp_username}")
                     st.write(f"**Manager:** {emp_manager if emp_manager else 'N/A'}")
                     if st.button(
-                        "View Ratings  ↗",
-                        key=f"view_ratings_{emp_username}",
-                        use_container_width=True,
-                        help="View rating summary for this employee"
+                    "View Ratings  ↗",
+                    key=f"view_ratings_{emp_username}",
+                    use_container_width=True,
+                    help="View rating summary for this employee"
                     ):
                         st.session_state["selected_employee"] = emp_name
                         st.switch_page("pages/Rating.py")
-else:
-    st.write("Unknown role.")
+
+        # Pagination controls
+        # Center align the row of buttons using markdown
+def set_page(page: int):
+    st.session_state["employee_page"] = page
+
+if total_pages > 1:
+    st.markdown(
+        """
+        <style>
+          .pagination-wrapper > div[data-testid="stHorizontalBlock"] {
+            width: fit-content !important;
+            margin: 0 auto !important;
+            gap: 0.5rem !important;
+          }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.markdown("<div class='pagination-wrapper'>", unsafe_allow_html=True)
+
+    btn_cols = st.columns(total_pages, gap="small")
+    for i, col in enumerate(btn_cols):
+        page_num = i + 1
+        with col:
+            st.button(
+                str(page_num),
+                key=f"employee_page_btn_{page_num}",
+                on_click=set_page,
+                args=(page_num,),
+                use_container_width=True,
+                type="primary" if st.session_state.get("employee_page", 1) == page_num else "secondary",
+            )
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
 
 # Add logout button
 st.write("---")
 if st.button("⚠️ Logout",type="primary"):
-    st.stop
+    st.session_state.clear()
     st.switch_page("Home.py")
+    st.stop()
