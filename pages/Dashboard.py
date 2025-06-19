@@ -727,9 +727,35 @@ elif user[3] == "HR":
         # Add button to view all ratings page
         st.write("---")
         st.subheader("View All Employee Ratings")
+        # Search bar for employees
+        search_query = st.text_input("🔍 Search Employee by Name or Email", value="", key="search_employee")
+        filtered_employees = [
+            emp for emp in employees
+            if search_query.lower() in emp[1].lower()] if search_query else employees
+
+        # Pagination setup
+        page_size = 9
+        total_employees = len(filtered_employees)
+        total_pages = (total_employees + page_size - 1) // page_size
+
+        if "employee_page" not in st.session_state:
+            st.session_state["employee_page"] = 1
+
+        # Reset page if search changes
+        if search_query and st.session_state.get("last_search_query") != search_query:
+            st.session_state["employee_page"] = 1
+        st.session_state["last_search_query"] = search_query
+
+        current_page = st.session_state["employee_page"]
+        start_idx = (current_page - 1) * page_size
+        end_idx = start_idx + page_size
+        employees_to_show = filtered_employees[start_idx:end_idx]
+        if not employees_to_show:
+            st.warning("No employees found matching your search criteria.")
+
         # Display employee cards in a grid (3 per row)
         card_cols = st.columns(3)
-        for idx, emp in enumerate(employees):
+        for idx, emp in enumerate(employees_to_show):
             emp_username, emp_name, emp_role, emp_manager = emp
             with card_cols[idx % 3]:
                 with st.container(border=True):
@@ -738,13 +764,37 @@ elif user[3] == "HR":
                     st.write(f"**Email:** {emp_username}")
                     st.write(f"**Manager:** {emp_manager if emp_manager else 'N/A'}")
                     if st.button(
-                        "View Ratings  ↗",
-                        key=f"view_ratings_{emp_username}",
-                        use_container_width=True,
-                        help="View rating summary for this employee"
+                    "View Ratings  ↗",
+                    key=f"view_ratings_{emp_username}",
+                    use_container_width=True,
+                    help="View rating summary for this employee"
                     ):
                         st.session_state["selected_employee"] = emp_name
                         st.switch_page("pages/Rating.py")
+
+        # Pagination controls
+        # Center align the row of buttons using markdown
+        st.markdown(
+        """
+        <style>
+        div[data-testid="column"] > div {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+        )
+        st.write("")
+        if total_pages > 1:
+            btn_cols = st.columns(total_pages, gap="small")
+            for i in range(total_pages):
+                page_num = i + 1
+                with btn_cols[i]:
+                    if st.button(f"{page_num}", key=f"employee_page_btn_{page_num}",type="primary" if page_num == current_page else "secondary"):
+                        st.session_state["employee_page"] = page_num
+                        st.rerun()
 else:
     st.write("Unknown role.")
 
