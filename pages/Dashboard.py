@@ -1,5 +1,4 @@
 import streamlit as st
-import hashlib
 import bcrypt
 import mysql.connector as connector
 
@@ -92,6 +91,14 @@ if user[3] == "employee":
                             f"</div>",
                             unsafe_allow_html=True
                         )
+            st.divider()
+            cursor.execute("SELECT remark FROM remarks WHERE ratee = %s AND rating_type = 'admin';", (name, ))
+            feedback = cursor.fetchone()
+            st.subheader("Remark:")
+            if feedback:
+                st.write(feedback[0])
+            else:
+                st.write("No remarks found.")
         else:
             st.info("No admin ratings received yet.")
 
@@ -127,6 +134,14 @@ if user[3] == "employee":
                             f"</div>",
                             unsafe_allow_html=True
                         )
+            st.divider()
+            cursor.execute("SELECT remark FROM remarks WHERE ratee = %s AND rating_type = 'manager';", (name, ))
+            feedback = cursor.fetchone()
+            st.subheader("Remark:")
+            if feedback:
+                st.write(feedback[0])
+            else:
+                st.write("No remarks found.")
         else:
             st.info("No manager ratings received yet.")
     ratings = cursor.fetchall()
@@ -281,6 +296,14 @@ elif user[3] == "manager":
                             f"</div>",
                             unsafe_allow_html=True
                         )
+            st.write("---")
+            cursor.execute("SELECT remark FROM remarks WHERE ratee = %s AND rating_type = 'admin';", (name, ))   
+            feedback = cursor.fetchone()
+            st.subheader("Remark:")
+            if feedback:
+                st.write(feedback[0])
+            else:
+                st.info("No remarks found.")
         else:
             st.info("No admin ratings received yet.")
     st.write("---")
@@ -337,6 +360,14 @@ elif user[3] == "manager":
                                     f"**{crit}**: {score}/10  \n<small>(submitted on {timestamp.strftime('%Y-%m-%d %H:%M')})</small>",
                                     unsafe_allow_html=True
                                 )
+                    st.divider()
+                    cursor.execute("SELECT remark FROM remarks WHERE rater = %s AND ratee = %s AND rating_type = 'manager';", (name, emp[0]))
+                    feedback = cursor.fetchone()
+                    st.subheader("Remark:")
+                    if feedback:
+                        st.write(feedback[0])
+                    else:
+                        st.write("No remarks found.")
                 else:
                     st.write("### Foundational Progress")
                     
@@ -352,6 +383,9 @@ elif user[3] == "manager":
                         futuristic_scores[crit] = st.slider(
                             f"{crit} ({weight}%)", 0, 10, 0, key=f"{emp[0]}_{crit}_fut_manager"
                         )
+                    # Add a text area for remarks/feedback
+                    st.write("### Add Remark/Feedback")
+                    remark = st.text_area(label="Remark", placeholder="Enter your feedback here...", key=f"remark_{emp[0]}")
                     @st.dialog("Confirmation")
                     def confirm_submit():
                         st.success(f"Ranking submitted for {emp[0]}")
@@ -368,6 +402,10 @@ elif user[3] == "manager":
                             cursor.execute(
                                 "INSERT INTO user_ratings (rater, ratee, role, criteria, score, rating_type) VALUES (%s, %s, %s, %s, %s, %s)",
                                 (name, emp[0], user[3], crit, score, "manager")
+                            )
+                        cursor.execute(
+                                "INSERT INTO remarks (rater, ratee, rating_type, remark) VALUES (%s, %s, %s, %s)",
+                                (name, emp[0], "manager", remark)
                             )
                         db.commit()
                         confirm_submit()
@@ -433,6 +471,14 @@ elif user[3] == "manager":
                             f"**{crit}**: {score}/10  \n<small>(submitted on {timestamp.strftime('%Y-%m-%d %H:%M')})</small>",
                             unsafe_allow_html=True
                         )
+            st.write("---")
+            cursor.execute("SELECT remark FROM remarks WHERE rater = %s AND ratee = %s AND rating_type = 'admin';", (name, emp[0]))   
+            feedback = cursor.fetchone()
+            st.subheader("Remark:")
+            if feedback:
+                st.write(feedback[0])
+            else:
+                st.write("No remarks found.")
         else:
             foundational_scores = {}
             st.write("### Foundational Progress")
@@ -505,6 +551,7 @@ elif user[3] == "admin":
             WHERE rater = %s AND ratee = %s ORDER BY timestamp DESC
         """, (name, emp[0]))
                 self_ratings = cursor.fetchall()
+                print(self_ratings)
                 all_criteria = [crit for crit, _ in foundational_criteria + futuristic_criteria]
                 submitted_criteria = set([crit for crit, _, _ in self_ratings])
                 if set(all_criteria).issubset(submitted_criteria):
@@ -532,6 +579,15 @@ elif user[3] == "admin":
                                     f"**{crit}**: {score}/10  \n<small>(submitted on {timestamp.strftime('%Y-%m-%d %H:%M')})</small>",
                                     unsafe_allow_html=True
                                 )
+                    st.write("---")
+                    cursor.execute("SELECT remark FROM remarks WHERE rater = %s AND ratee = %s AND rating_type = 'admin';", (name, emp[0]))   
+                    feedback = cursor.fetchone()
+                    st.subheader("Remark:")
+                    if feedback:
+                        st.write(feedback[0])
+                    else:
+                        st.write("No remarks found.")
+
                 else:
                     st.write("### Foundational Progress")
                     
@@ -547,6 +603,9 @@ elif user[3] == "admin":
                         futuristic_scores[crit] = st.slider(
                             f"{crit} ({weight}%)", 0, 10, 0, key=f"{emp[0]}_{crit}_fut_manager"
                         )
+                    # Add a text area for remarks/feedback
+                    st.write("### Add Remark/Feedback")
+                    remark = st.text_area(label="Remark", placeholder="Enter your feedback here...", key=f"remark_{emp[0]}")
                     @st.dialog("Confirmation")
                     def confirm_submit():
                         st.success(f"Ranking submitted for {emp[0]}")
@@ -564,6 +623,10 @@ elif user[3] == "admin":
                                 "INSERT INTO user_ratings (rater, ratee, role, criteria, score, rating_type) VALUES (%s, %s, %s, %s, %s, %s)",
                                 (name, emp[0], user[3], crit, score, "admin")
                             )
+                        cursor.execute(
+                            "INSERT INTO remarks (rater, ratee, rating_type, remark) VALUES (%s, %s, %s, %s)",
+                            (name, emp[0], "admin", remark)
+                        )
                         db.commit()
                         confirm_submit()
     else:
@@ -688,5 +751,6 @@ else:
 # Add logout button
 st.write("---")
 if st.button("⚠️ Logout",type="primary"):
-    st.stop
+    st.session_state.clear()
     st.switch_page("Home.py")
+    st.stop()

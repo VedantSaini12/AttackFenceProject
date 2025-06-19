@@ -86,6 +86,13 @@ with st.container():
                                 <small>by <b>{rater}</b> ({r_role}) on {timestamp.strftime('%Y-%m-%d %H:%M')}</small>
                             </div>
                         """, unsafe_allow_html=True)
+        st.write("### Remark: ")
+        cursor.execute("Select remark from remarks where ratee = %s and rating_type = 'admin'", (employee,))
+        feedback = cursor.fetchone()
+        if feedback:
+            st.markdown(f"{feedback[0]}", unsafe_allow_html=True)
+        else:
+            st.info("No feedback provided by admin.")
     else:
         st.info("No admin ratings received yet.")
 st.divider()
