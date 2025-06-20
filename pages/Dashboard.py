@@ -525,7 +525,7 @@ elif user[3] == "manager":
 elif user[3] == "admin":
     cursor.execute("SELECT username FROM users where username != %s", (name,))
     employees = cursor.fetchall()
-    st.write("You are an admin and manage all users:")
+    st.write("## Submit rating for employee")
     foundational_criteria = [
                     ("Humility", 12.5),
                     ("Integrity", 12.5),
@@ -544,93 +544,140 @@ elif user[3] == "admin":
                 ("Process adherence", 20),
             ]
     if employees:
-        for emp in employees:
-           with st.expander(f"- {emp[0]}"):
-                cursor.execute("""
-            SELECT criteria, score, timestamp FROM user_ratings
-            WHERE rater = %s AND ratee = %s ORDER BY timestamp DESC
-        """, (name, emp[0]))
-                self_ratings = cursor.fetchall()
-                print(self_ratings)
-                all_criteria = [crit for crit, _ in foundational_criteria + futuristic_criteria]
-                submitted_criteria = set([crit for crit, _, _ in self_ratings])
-                if set(all_criteria).issubset(submitted_criteria):
-                    st.info(f"You have already submitted a rating for {emp[0]}. Here is a summary:")
-                    # Display summary in two columns for better readability
-                    summary = {}
-                    col1, col2 = st.columns(2)
-                    # Foundational criteria in col1
-                    with col1:
-                        st.markdown("### Foundational Progress")
-                        for crit, _ in foundational_criteria:
-                            if crit in [c for c, _, _ in self_ratings]:
-                                score, timestamp = next((s, t) for c, s, t in self_ratings if c == crit)
-                                st.markdown(
-                                    f"**{crit}**: {score}/10  \n<small>(submitted on {timestamp.strftime('%Y-%m-%d %H:%M')})</small>",
-                                    unsafe_allow_html=True
-                                )
-                    # Futuristic criteria in col2
-                    with col2:
-                        st.markdown("### Futuristic Progress")
-                        for crit, _ in futuristic_criteria:
-                            if crit in [c for c, _, _ in self_ratings]:
-                                score, timestamp = next((s, t) for c, s, t in self_ratings if c == crit)
-                                st.markdown(
-                                    f"**{crit}**: {score}/10  \n<small>(submitted on {timestamp.strftime('%Y-%m-%d %H:%M')})</small>",
-                                    unsafe_allow_html=True
-                                )
-                    st.write("---")
-                    cursor.execute("SELECT remark FROM remarks WHERE rater = %s AND ratee = %s AND rating_type = 'admin';", (name, emp[0]))   
-                    feedback = cursor.fetchone()
-                    st.subheader("Remark:")
-                    if feedback:
-                        st.write(feedback[0])
+        # --- Admin: Search bar and pagination for employee list ---
+        # Search bar for employees
+        search_query_admin = st.text_input("🔍 Search Employee by Name", value="", key="search_employee_admin")
+        filtered_employees_admin = [
+            emp for emp in employees
+            if search_query_admin.lower() in emp[0].lower()
+        ] if search_query_admin else employees
+
+        # Pagination setup
+        page_size_admin = 6
+        total_employees_admin = len(filtered_employees_admin)
+        total_pages_admin = (total_employees_admin + page_size_admin - 1) // page_size_admin
+
+        if "employee_admin_page" not in st.session_state:
+            st.session_state["employee_admin_page"] = 1
+
+        # Reset page if search changes
+        if search_query_admin and st.session_state.get("last_search_query_admin") != search_query_admin:
+            st.session_state["employee_admin_page"] = 1
+        st.session_state["last_search_query_admin"] = search_query_admin
+
+        current_page_admin = st.session_state["employee_admin_page"]
+        start_idx_admin = (current_page_admin - 1) * page_size_admin
+        end_idx_admin = start_idx_admin + page_size_admin
+        employees_to_show_admin = filtered_employees_admin[start_idx_admin:end_idx_admin]
+
+        if not employees_to_show_admin:
+            st.info("No employees found.")
+        else:
+            for emp in employees_to_show_admin:
+                with st.expander(f"- {emp[0]}"):
+                    cursor.execute("""
+                    SELECT criteria, score, timestamp FROM user_ratings
+                    WHERE rater = %s AND ratee = %s ORDER BY timestamp DESC
+                    """, (name, emp[0]))
+                    self_ratings = cursor.fetchall()
+                    all_criteria = [crit for crit, _ in foundational_criteria + futuristic_criteria]
+                    submitted_criteria = set([crit for crit, _, _ in self_ratings])
+                    if set(all_criteria).issubset(submitted_criteria):
+                        st.info(f"You have already submitted a rating for {emp[0]}. Here is a summary:")
+                        # Display summary in two columns for better readability
+                        col1, col2 = st.columns(2)
+                        # Foundational criteria in col1
+                        with col1:
+                            st.markdown("### Foundational Progress")
+                            for crit, _ in foundational_criteria:
+                                if crit in [c for c, _, _ in self_ratings]:
+                                    score, timestamp = next((s, t) for c, s, t in self_ratings if c == crit)
+                                    st.markdown(
+                                        f"**{crit}**: {score}/10  \n<small>(submitted on {timestamp.strftime('%Y-%m-%d %H:%M')})</small>",
+                                        unsafe_allow_html=True
+                                    )
+                        # Futuristic criteria in col2
+                        with col2:
+                            st.markdown("### Futuristic Progress")
+                            for crit, _ in futuristic_criteria:
+                                if crit in [c for c, _, _ in self_ratings]:
+                                    score, timestamp = next((s, t) for c, s, t in self_ratings if c == crit)
+                                    st.markdown(
+                                        f"**{crit}**: {score}/10  \n<small>(submitted on {timestamp.strftime('%Y-%m-%d %H:%M')})</small>",
+                                        unsafe_allow_html=True
+                                    )
+                        st.write("---")
+                        cursor.execute("SELECT remark FROM remarks WHERE rater = %s AND ratee = %s AND rating_type = 'admin';", (name, emp[0]))   
+                        feedback = cursor.fetchone()
+                        st.subheader("Remark:")
+                        if feedback:
+                            st.write(feedback[0])
+                        else:
+                            st.write("No remarks found.")
                     else:
-                        st.write("No remarks found.")
-
-                else:
-                    st.write("### Foundational Progress")
-                    
-                    foundational_scores = {}
-                    for crit, weight in foundational_criteria:
-                        foundational_scores[crit] = st.slider(
-                            f"{crit} ({weight}%)", 0, 10, 0, key=f"{emp[0]}_{crit}_manager"
-                        )
-
-                    st.write("### Futuristic Progress")
-                    futuristic_scores = {}
-                    for crit, weight in futuristic_criteria:
-                        futuristic_scores[crit] = st.slider(
-                            f"{crit} ({weight}%)", 0, 10, 0, key=f"{emp[0]}_{crit}_fut_manager"
-                        )
-                    # Add a text area for remarks/feedback
-                    st.write("### Add Remark/Feedback")
-                    remark = st.text_area(label="Remark", placeholder="Enter your feedback here...", key=f"remark_{emp[0]}")
-                    @st.dialog("Confirmation")
-                    def confirm_submit():
-                        st.success(f"Ranking submitted for {emp[0]}")
-                        if st.button("Close"):
-                            st.rerun()
-                    if st.button(f"Submit Ranking for {emp[0]}", key=f"submit_{emp[0]}_manager"):
-                        # Save the manager's ratings for the employee in the database
-                        for crit, score in foundational_scores.items():
-                            cursor.execute(
-                                "INSERT INTO user_ratings (rater, ratee, role, criteria, score, rating_type) VALUES (%s, %s, %s, %s, %s, %s)",
-                                (name, emp[0], user[3], crit, score, "admin")
+                        st.write("### Foundational Progress")
+                        foundational_scores = {}
+                        for crit, weight in foundational_criteria:
+                            foundational_scores[crit] = st.slider(
+                                f"{crit} ({weight}%)", 0, 10, 0, key=f"{emp[0]}_{crit}_manager"
                             )
-                        for crit, score in futuristic_scores.items():
-                            cursor.execute(
-                                "INSERT INTO user_ratings (rater, ratee, role, criteria, score, rating_type) VALUES (%s, %s, %s, %s, %s, %s)",
-                                (name, emp[0], user[3], crit, score, "admin")
+
+                        st.write("### Futuristic Progress")
+                        futuristic_scores = {}
+                        for crit, weight in futuristic_criteria:
+                            futuristic_scores[crit] = st.slider(
+                                f"{crit} ({weight}%)", 0, 10, 0, key=f"{emp[0]}_{crit}_fut_manager"
                             )
-                        cursor.execute(
-                            "INSERT INTO remarks (rater, ratee, rating_type, remark) VALUES (%s, %s, %s, %s)",
-                            (name, emp[0], "admin", remark)
-                        )
-                        db.commit()
-                        confirm_submit()
-    else:
-        st.write("No employees found.")
+                        # Add a text area for remarks/feedback
+                        st.write("### Add Remark/Feedback")
+                        remark = st.text_area(label="Remark", placeholder="Enter your feedback here...", key=f"remark_{emp[0]}")
+                        @st.dialog("Confirmation")
+                        def confirm_submit():
+                            st.success(f"Ranking submitted for {emp[0]}")
+                            if st.button("Close"):
+                                st.rerun()
+                        if st.button(f"Submit Ranking for {emp[0]}", key=f"submit_{emp[0]}_manager"):
+                            # Save the admin's ratings for the employee in the database
+                            for crit, score in foundational_scores.items():
+                                cursor.execute(
+                                    "INSERT INTO user_ratings (rater, ratee, role, criteria, score, rating_type) VALUES (%s, %s, %s, %s, %s, %s)",
+                                    (name, emp[0], user[3], crit, score, "admin")
+                                )
+                            for crit, score in futuristic_scores.items():
+                                cursor.execute(
+                                    "INSERT INTO user_ratings (rater, ratee, role, criteria, score, rating_type) VALUES (%s, %s, %s, %s, %s, %s)",
+                                    (name, emp[0], user[3], crit, score, "admin")
+                                )
+                            cursor.execute(
+                                "INSERT INTO remarks (rater, ratee, rating_type, remark) VALUES (%s, %s, %s, %s)",
+                                (name, emp[0], "admin", remark)
+                            )
+                            db.commit()
+                            confirm_submit()
+
+        # Pagination controls for admin section
+        # Pagination controls for admin section
+        st.markdown(
+            """
+            <style>
+            div[data-testid="column"] > div {
+                display: flex;
+                justify-content: center;
+                align-items: center;
+            }
+            </style>
+            """,
+            unsafe_allow_html=True,
+        )
+        st.write("")
+        if total_pages_admin > 1:
+            btn_cols_admin = st.columns(total_pages_admin, gap="small")
+            for i in range(total_pages_admin):
+                page_num = i + 1
+                with btn_cols_admin[i]:
+                    if st.button(f"{page_num}", use_container_width=True, key=f"employee_admin_page_btn_{page_num}", type="primary" if page_num == current_page_admin else "secondary"):
+                        st.session_state["employee_admin_page"] = page_num
+                        st.rerun()
     st.write("---")
     # Admin button to create new employee or manager
     st.write("## Manage Employees")
@@ -676,12 +723,38 @@ elif user[3] == "HR":
     st.subheader("Edit Existing Employees")
     cursor.execute(f"SELECT email, username, role, managed_by FROM users WHERE role != 'admin' and username != '{name}'")
     employees = cursor.fetchall()
-    if not employees:
+
+    # Search bar for employees
+    search_query_edit = st.text_input("🔍 Search Employee by Name", value="", key="search_employee_edit")
+    filtered_employees_edit = [
+        emp for emp in employees
+        if search_query_edit.lower() in emp[1].lower() or search_query_edit.lower() in emp[0].lower()
+    ] if search_query_edit else employees
+
+    # Pagination setup
+    page_size_edit = 6
+    total_employees_edit = len(filtered_employees_edit)
+    total_pages_edit = (total_employees_edit + page_size_edit - 1) // page_size_edit
+
+    if "employee_edit_page" not in st.session_state:
+        st.session_state["employee_edit_page"] = 1
+
+    # Reset page if search changes
+    if search_query_edit and st.session_state.get("last_search_query_edit") != search_query_edit:
+        st.session_state["employee_edit_page"] = 1
+    st.session_state["last_search_query_edit"] = search_query_edit
+
+    current_page_edit = st.session_state["employee_edit_page"]
+    start_idx_edit = (current_page_edit - 1) * page_size_edit
+    end_idx_edit = start_idx_edit + page_size_edit
+    employees_to_show_edit = filtered_employees_edit[start_idx_edit:end_idx_edit]
+
+    if not employees_to_show_edit:
         st.info("No employees found.")
     else:
-        for emp in employees:
+        for emp in employees_to_show_edit:
             emp_username, emp_name, emp_role, emp_manager = emp
-            with st.expander(f"**{emp_name}** ({emp_role})",icon="👤", expanded=False):
+            with st.expander(f"**{emp_name}** ({emp_role})", icon="👤", expanded=False):
                 new_name = st.text_input(f"Full Name for {emp_name}", value=emp_name, key=f"name_{emp_username}")
                 # Only allow changing manager for employees, not managers/HR
                 if emp_role == "employee":
@@ -691,7 +764,7 @@ elif user[3] == "HR":
                         f"Manager for {emp_name}", managers, 
                         index=managers.index(emp_manager) if emp_manager in managers else 0,
                         key=f"mgr_{emp_name}"
-                    ) if managers else None # Managers cannot have their manager changed
+                    ) if managers else None
                     # Allow changing role except to admin
                     new_role = st.selectbox(
                         f"Role for {emp_name}", 
@@ -701,6 +774,7 @@ elif user[3] == "HR":
                     )
                 else:
                     new_manager = emp_manager
+                    new_role = emp_role
                 @st.dialog("Confirmation")
                 def confirm_submit():
                     st.success(f"Updated details for {emp_name}")
@@ -724,6 +798,29 @@ elif user[3] == "HR":
                         )
                     db.commit()
                     confirm_submit()
+
+    # Pagination controls for edit section
+    st.markdown(
+        """
+        <style>
+        div[data-testid="column"] > div {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.write("")
+    if total_pages_edit > 1:
+        btn_cols_edit = st.columns(total_pages_edit, gap="small")
+        for i in range(total_pages_edit):
+            page_num = i + 1
+            with btn_cols_edit[i]:
+                if st.button(f"{page_num}", use_container_width=True, key=f"employee_edit_page_btn_{page_num}", type="primary" if page_num == current_page_edit else "secondary"):
+                    st.session_state["employee_edit_page"] = page_num
+                    st.rerun()
         # Add button to view all ratings page
         st.write("---")
         st.subheader("View All Employee Ratings")
@@ -792,7 +889,7 @@ elif user[3] == "HR":
             for i in range(total_pages):
                 page_num = i + 1
                 with btn_cols[i]:
-                    if st.button(f"{page_num}", key=f"employee_page_btn_{page_num}",type="primary" if page_num == current_page else "secondary"):
+                    if st.button(f"{page_num}",use_container_width=True, key=f"employee_page_btn_{page_num}",type="primary" if page_num == current_page else "secondary"):
                         st.session_state["employee_page"] = page_num
                         st.rerun()
 else:
