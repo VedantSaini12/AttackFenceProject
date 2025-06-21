@@ -1,38 +1,50 @@
 import streamlit as st
 import bcrypt
 import mysql.connector as connector
+import time
 
-try:
-    name = st.session_state["name"]
-except:
-    st.error("No username provided. Please log in first.")
-    if st.button("Go to Login"):
-        st.switch_page("Home.py")
-    st.stop()
-db = connector.connect(
-        host="localhost",         # change if needed
-        user="root",              # your MySQL Email
-        password="password", # your MySQL password
-    )
-cursor = db.cursor()
-cursor.execute("USE auth")
-cursor.execute("SELECT * FROM users WHERE username = %s", (name,))
-user = cursor.fetchone()
 
 st.set_page_config(
     page_title="Dashboard",
     page_icon="📊",
     layout="wide",
 )
+
+# --- NEW AUTHENTICATION GUARD using Query Params ---
+
+# 1. Check session state first
+if "name" not in st.session_state:
+    # 2. If not in session state, check the URL query parameters
+    if "user" in st.query_params:
+        # If a user is found in the URL, restore the session state from it
+        st.session_state["name"] = st.query_params["user"]
+    else:
+        # If no user in session OR URL, deny access
+        st.error("No user logged in. Please log in first.")
+        if st.button("Go to Login"):
+            st.switch_page("Home.py")
+        st.stop()
+
+# 3. At this point, the user is authenticated.
+#    Ensure the user's name is in the URL for refresh persistence.
+st.query_params.user = st.session_state["name"]
+name = st.session_state["name"]
+
+# --- DATABASE CONNECTION ---
+db = connector.connect(
+        host="localhost",         # change if needed
+        user="root",              # your MySQL Email
+        password="sqladi@2710", # your MySQL password
+    )
+cursor = db.cursor()
+cursor.execute("USE auth")
+cursor.execute("SELECT * FROM users WHERE username = %s", (name,))
+user = cursor.fetchone()
+
+
 st.title("Dashboard 📊")
 st.write("---")
-try:
-    st.write(f"<center><h2>Welcome {name} - {user[3]}!</h2></center>", unsafe_allow_html=True)
-except:
-    st.error("No username provided. Please log in first.")
-    if st.button("Go to Login"):
-        st.switch_page("Home.py")
-    st.stop()
+st.write(f"<center><h2>Welcome {name} - {user[3].title()}!</h2></center>", unsafe_allow_html=True)
 st.write("<br>", unsafe_allow_html=True)
 if user[3] == "employee":
     # Show ratings given to the employee by others
@@ -656,7 +668,6 @@ elif user[3] == "admin":
                             confirm_submit()
 
         # Pagination controls for admin section
-        # Pagination controls for admin section
         st.markdown(
             """
             <style>
@@ -897,7 +908,8 @@ else:
 
 # Add logout button
 st.write("---")
-if st.button("⚠️ Logout",type="primary"):
+# --- NEW LOGOUT BUTTON ---
+if st.button("⚠️ Logout", type="primary"):
     st.session_state.clear()
+    st.query_params.clear() # Clears the user from the URL
     st.switch_page("Home.py")
-    st.stop()

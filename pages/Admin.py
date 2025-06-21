@@ -1,14 +1,46 @@
 import streamlit as st
 import bcrypt
 import mysql.connector as connector
-# MySQL connection settings
+
+# --- NEW AUTHENTICATION GUARD using Query Params ---
+
+# 1. Check session state first
+if "name" not in st.session_state:
+    # 2. If not in session state, check the URL query parameters
+    if "user" in st.query_params:
+        # If a user is found in the URL, restore the session state from it
+        st.session_state["name"] = st.query_params["user"]
+    else:
+        # If no user in session OR URL, deny access
+        st.error("No user logged in. Please log in first.")
+        if st.button("Go to Login"):
+            st.switch_page("Home.py")
+        st.stop()
+
+# 3. At this point, the user is authenticated.
+#    Ensure the user's name is in the URL for refresh persistence.
+st.query_params.user = st.session_state["name"]
+name = st.session_state["name"]
+
+# After authentication, verify the role
 db = connector.connect(
-    host="localhost", 
-    user="root",
-    password="password",  
-    database="auth" )
+    host="localhost", user="root", password="sqladi@2710", database="auth")
 cursor = db.cursor()
-st.write("<center><h1>Admin Page</h1></center>", unsafe_allow_html=True)
+cursor.execute("SELECT role FROM users WHERE username = %s", (name,))
+user_role = cursor.fetchone()
+
+if not user_role or user_role[0] not in ['admin', 'HR']:
+    st.error("Access Denied: You do not have permission to view this page.")
+    st.stop()
+
+# Ensure the user has the correct role to access this page
+if not user_role or user_role[0] not in ['admin', 'HR']:
+    st.error("Access Denied: You do not have permission to view this page.")
+    st.stop()
+
+
+# --- START OF PAGE CONTENT ---
+st.write(f"<center><h1>{user_role[0].title()} Page</h1></center>", unsafe_allow_html=True)
 
 option = st.selectbox(
     "Select an action",

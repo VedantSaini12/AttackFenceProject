@@ -4,7 +4,26 @@ import mysql.connector as connector
 # Page Config
 st.set_page_config(page_title="Employee Ratings Dashboard", layout="wide")
 
-# Custom Styles
+# --- NEW AUTHENTICATION GUARD using Query Params ---
+# 1. Check session state first
+if "name" not in st.session_state:
+    # 2. If not in session state, check the URL query parameters
+    if "user" in st.query_params:
+        # If a user is found in the URL, restore the session state from it
+        st.session_state["name"] = st.query_params["user"]
+    else:
+        # If no user in session OR URL, deny access
+        st.error("No user logged in. Please log in first.")
+        if st.button("Go to Login"):
+            st.switch_page("Home.py")
+        st.stop()
+
+# 3. At this point, the user is authenticated.
+#    Ensure the user's name is in the URL for refresh persistence.
+st.query_params.user = st.session_state["name"]
+name = st.session_state["name"]
+
+# --- Custom Styles ---
 st.markdown("""
     <style>
     .rating-card {
@@ -24,12 +43,12 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# MySQL connection
+# --- MySQL connection ---
 try:
     db = connector.connect(
         host="localhost",
         user="root",
-        password="password"
+        password="sqladi@2710"
     )
     cursor = db.cursor()
     cursor.execute("USE auth")
@@ -37,12 +56,12 @@ except Exception as e:
     st.error(f"Database connection failed: {e}")
     st.stop()
 
-# Session check
+# --- Session check for selected employee ---
+# This check now runs AFTER the main authentication check.
 employee = st.session_state.get("selected_employee")
 if not employee:
-    st.error("No employee selected. Please select an employee first.")
+    st.error("No employee selected. Please go to the dashboard to select an employee.")
     if st.button("Go to Dashboard"):
-        st.session_state.selected_employee = None
         st.switch_page("pages/Dashboard.py")
     st.stop()
 

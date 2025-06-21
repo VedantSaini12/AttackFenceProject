@@ -30,7 +30,7 @@ def get_db_connection():
         db = connector.connect(
             host="localhost",
             user="root",
-            password="password",
+            password="sqladi@2710",
             database="auth"
         )
         return db
@@ -43,6 +43,10 @@ if db:
     cursor = db.cursor()
 else:
     st.stop()
+
+# --- AUTO-LOGIN LOGIC (Corrected and Improved) ---
+if st.session_state.get("name"):
+    st.switch_page("pages/Dashboard.py")
 
 # --- LOAD ASSETS ---
 # Paths to your logo parts
@@ -198,13 +202,18 @@ with col2:
 
     if login_button:
         if email and password:
+            # Add these two lines
             cursor.execute("SELECT * FROM users WHERE Email = %s", (email,))
             user = cursor.fetchone()
+            
+            # Now the 'user' variable exists for the check below
             if user and bcrypt.checkpw(password.encode(), user[2].encode()):
-                st.session_state["name"] = user[5]  # Assuming index 5 is the username
+                username = user[5]
+                # Set the session state ONLY
+                st.session_state["name"] = username
+                # Switch to the dashboard
                 st.switch_page("pages/Dashboard.py")
             else:
-                # Display the styled error message
                 error_placeholder.markdown('<p class="error-message alert alert-warning">⚠️Invalid Email or password</p>', unsafe_allow_html=True)
         else:
             error_placeholder.markdown('<p class="error-message alert alert-warning">⚠️Please enter both Email and password</p>', unsafe_allow_html=True)
