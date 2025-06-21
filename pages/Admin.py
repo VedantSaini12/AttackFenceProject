@@ -2,16 +2,6 @@ import streamlit as st
 import bcrypt
 import mysql.connector as connector
 
-# st.html(
-# """
-# <style>
-#     div[data-testid='element-container']:has(iframe[title='streamlit_cookies_controller.cookie_controller']) {
-#         display: none;
-#     }
-# </style>
-# """
-# )
-
 # --- Initialize Cookie Controller ---
 # controller = CookieController()
 
