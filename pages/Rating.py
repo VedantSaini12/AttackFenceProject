@@ -60,9 +60,17 @@ except Exception as e:
 # This check now runs AFTER the main authentication check.
 employee = st.session_state.get("selected_employee")
 if not employee:
-    st.error("No employee selected. Please go to the dashboard to select an employee.")
-    if st.button("Go to Dashboard"):
-        st.switch_page("pages/Dashboard.py")
+    st.error("No employee selected. Please return to your dashboard to select an employee.")
+    if st.button("Go to My Dashboard"):
+        role = st.session_state.get("role")
+        if role == 'HR':
+            st.switch_page("pages/3_HR_Dashboard.py")
+        elif role == 'admin':
+            st.switch_page("pages/4_Admin_Panel.py")
+        # Add other roles if they can access this page
+        else:
+            # Default fallback
+            st.switch_page("Home.py")
     st.stop()
 
 foundational_criteria = [

@@ -46,7 +46,15 @@ else:
 
 # --- AUTO-LOGIN LOGIC (Corrected and Improved) ---
 if st.session_state.get("name"):
-    st.switch_page("pages/Dashboard.py")
+    role = st.session_state.get("role")
+    if role == 'employee':
+        st.switch_page("pages/1_Employee_Dashboard.py")
+    elif role == 'manager':
+        st.switch_page("pages/2_Manager_Dashboard.py")
+    elif role == 'HR':
+        st.switch_page("pages/3_HR_Dashboard.py")
+    elif role == 'admin':
+        st.switch_page("pages/4_Admin_Panel.py")
 
 # --- LOAD ASSETS ---
 # Paths to your logo parts
@@ -206,13 +214,26 @@ with col2:
             cursor.execute("SELECT * FROM users WHERE Email = %s", (email,))
             user = cursor.fetchone()
             
-            # Now the 'user' variable exists for the check below
+            # New code for Home.py
             if user and bcrypt.checkpw(password.encode(), user[2].encode()):
+                # user[5] is username, user[3] is role
                 username = user[5]
-                # Set the session state ONLY
+                user_role = user[3] 
+
                 st.session_state["name"] = username
-                # Switch to the dashboard
-                st.switch_page("pages/Dashboard.py")
+                st.session_state["role"] = user_role
+
+                # Redirect based on user role
+                if user_role == 'employee':
+                    st.switch_page("pages/1_Employee_Dashboard.py")
+                elif user_role == 'manager':
+                    st.switch_page("pages/2_Manager_Dashboard.py")
+                elif user_role == 'HR':
+                    st.switch_page("pages/3_HR_Dashboard.py")
+                elif user_role == 'admin':
+                    st.switch_page("pages/4_Admin_Panel.py")
+                else:
+                    st.error("Unknown user role. Please contact support.")
             else:
                 error_placeholder.markdown('<p class="error-message alert alert-warning">⚠️Invalid Email or password</p>', unsafe_allow_html=True)
         else:
