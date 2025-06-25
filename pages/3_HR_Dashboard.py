@@ -5,23 +5,60 @@ import bcrypt
 # --- PAGE CONFIGURATION ---
 st.set_page_config(page_title="HR Dashboard", page_icon="📋", layout="wide")
 
-# --- AUTHENTICATION GUARD ---
-if "name" not in st.session_state:
+# --- CORRECTED AUTHENTICATION GUARD ---
+
+# 1. Check if the user's name or role is missing from the session state
+if "name" not in st.session_state or "role" not in st.session_state:
+    
+    # 2. If so, check for a user in the URL query parameters
     if "user" in st.query_params:
-        st.session_state["name"] = st.query_params["user"]
+        # Restore the name from the URL
+        name_from_url = st.query_params["user"]
+        st.session_state["name"] = name_from_url
+
+        # 3. THIS IS THE FIX: Re-fetch the role from the database
+        try:
+            db = connector.connect(host="localhost", user="root", password="sqladi@2710", database="auth")
+            cursor = db.cursor()
+            cursor.execute("SELECT role FROM users WHERE username = %s", (name_from_url,))
+            result = cursor.fetchone()
+            db.close()
+            
+            if result:
+                # If the role is found, restore it to the session and rerun the page
+                st.session_state["role"] = result[0]
+                st.rerun()
+            else:
+                # If the user from the URL is not valid, clear everything and stop
+                st.session_state.clear()
+                st.query_params.clear()
+                st.error("Invalid user session. Please log in again.")
+                st.stop()
+
+        except connector.Error as e:
+            st.error(f"Database error during authentication: {e}")
+            st.stop()
+            
     else:
+        # If no user in session OR URL, deny access
         st.error("No user logged in. Please log in first.")
         if st.button("Go to Login"):
             st.switch_page("Home.py")
         st.stop()
+
+# 4. If we get here, the user is authenticated.
+#    Ensure the user's name is in the URL for refresh persistence.
 st.query_params.user = st.session_state["name"]
 name = st.session_state["name"]
+role = st.session_state["role"]
 
-# --- DATABASE CONNECTION ---
-db = connector.connect(host="localhost", user="root", password="sqladi@2710", database="auth")
-cursor = db.cursor()
-cursor.execute("SELECT * FROM users WHERE username = %s", (name,))
-user = cursor.fetchone()
+# --- MAIN DATABASE CONNECTION FOR THE PAGE ---
+try:
+    db = connector.connect(host="localhost", user="root", password="sqladi@2710", database="auth")
+    cursor = db.cursor()
+except connector.Error as e:
+    st.error(f"Database connection failed: {e}")
+    st.stop()
 
 # --- HR DASHBOARD UI ---
 st.title("HR Dashboard 📋")
@@ -139,20 +176,26 @@ else:
             # Password update
             new_password = st.text_input(f"New Password for {emp_name} (leave blank to keep unchanged)", type="password", key=f"pwd_{emp_username}")
             if st.button(f"Update {emp_name}", key=f"update_{emp_name}"):
+                original_emp_username = emp_name
                 if new_password:
-                    # Encrypt the password using bcrypt
                     hashed = bcrypt.hashpw(new_password.encode(), bcrypt.gensalt())
                     cursor.execute(
                         "UPDATE users SET username = %s, role = %s, managed_by = %s, password = %s WHERE email = %s",
                         (new_name, new_role, new_manager, hashed, emp_username)
                     )
-                    cursor.execute("Update users set managed_by = 'XYZ' where role = 'manager'")
                 else:
                     cursor.execute(
                         "UPDATE users SET username = %s, role = %s, managed_by = %s WHERE email = %s",
                         (new_name, new_role, new_manager, emp_username)
                     )
-                db.commit()
+                db.commit() 
+                if new_name != original_emp_username and emp_role == 'manager':
+                    cursor.execute(
+                        "UPDATE users SET managed_by = %s WHERE managed_by = %s",
+                        (new_name, original_emp_username)
+                    )
+                    db.commit()
+                
                 confirm_submit()
 
 # Pagination controls for edit section
@@ -251,7 +294,7 @@ else:
 
 # --- LOGOUT BUTTON ---
 st.write("---")
-if st.button("⚠️ Logout", type="primary"):
+if st.button("Logout", type="primary"):
     st.session_state.clear()
     st.query_params.clear()
     st.switch_page("Home.py")
