@@ -2,26 +2,70 @@ import streamlit as st
 import mysql.connector as connector
 
 # Page Config
-st.set_page_config(page_title="Employee Ratings Dashboard", layout="wide")
+st.set_page_config(page_title="Evaluation Report", layout="wide")
 
-# --- NEW AUTHENTICATION GUARD using Query Params ---
-# 1. Check session state first
-if "name" not in st.session_state:
-    # 2. If not in session state, check the URL query parameters
+# If we already have a name but no role, go fetch it too
+if "name" in st.session_state and "role" not in st.session_state:
+    try:
+        db_tmp = connector.connect(host="localhost", user="root", password="sqladi@2710", database="auth")
+        cur_tmp = db_tmp.cursor()
+        cur_tmp.execute("SELECT role FROM users WHERE username = %s", (st.session_state["name"],))
+        r = cur_tmp.fetchone()
+        db_tmp.close()
+        if r:
+            st.session_state["role"] = r[0]
+    except connector.Error:
+        pass
+
+# Now the usual guard
+if "name" not in st.session_state or "role" not in st.session_state:
     if "user" in st.query_params:
-        # If a user is found in the URL, restore the session state from it
-        st.session_state["name"] = st.query_params["user"]
+        # re-hydrate exactly as in your other dashboards...
+        name_from_url = st.query_params["user"]
+        st.session_state["name"] = name_from_url
+        try:
+            db = connector.connect(host="localhost", user="root", password="sqladi@2710", database="auth")
+            cursor = db.cursor()
+            cursor.execute("SELECT role FROM users WHERE username = %s", (name_from_url,))
+            result = cursor.fetchone()
+            db.close()
+            if result:
+                st.session_state["role"] = result[0]
+                st.rerun()
+            else:
+                st.session_state.clear(); st.query_params.clear()
+                st.error("Invalid user session. Please log in again."); st.stop()
+        except connector.Error as e:
+            st.error(f"Database error during authentication: {e}"); st.stop()
     else:
-        # If no user in session OR URL, deny access
         st.error("No user logged in. Please log in first.")
         if st.button("Go to Login"):
             st.switch_page("Home.py")
         st.stop()
 
-# 3. At this point, the user is authenticated.
-#    Ensure the user's name is in the URL for refresh persistence.
+# If we reach here, both name & role are in session_state
 st.query_params.user = st.session_state["name"]
 name = st.session_state["name"]
+role = st.session_state["role"]
+
+# --- MAIN DATABASE CONNECTION FOR THE PAGE ---
+try:
+    db = connector.connect(host="localhost", user="root", password="sqladi@2710", database="auth")
+    cursor = db.cursor()
+except connector.Error as e:
+    st.error(f"Database connection failed: {e}")
+    st.stop()
+    
+# --- BACK BUTTON ---
+if st.button("←"):
+    role = st.session_state.get("role")
+    if role == 'HR':
+        st.switch_page("pages/3_HR_Dashboard.py")
+    elif role == 'admin':
+        st.switch_page("pages/4_Admin_Panel.py")
+    else:
+        # Fallback for any other roles or edge cases
+        st.switch_page("Home.py")
 
 # --- Custom Styles ---
 st.markdown("""
@@ -43,19 +87,6 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- MySQL connection ---
-try:
-    db = connector.connect(
-        host="localhost",
-        user="root",
-        password="sqladi@2710"
-    )
-    cursor = db.cursor()
-    cursor.execute("USE auth")
-except Exception as e:
-    st.error(f"Database connection failed: {e}")
-    st.stop()
-
 # --- Session check for selected employee ---
 # This check now runs AFTER the main authentication check.
 employee = st.session_state.get("selected_employee")
@@ -73,6 +104,7 @@ if not employee:
             st.switch_page("Home.py")
     st.stop()
 
+# Define criteria lists
 foundational_criteria = [
     "Humility", "Integrity", "Collegiality", "Attitude",
     "Time Management", "Initiative", "Communication", "Compassion"
@@ -82,56 +114,17 @@ futuristic_criteria = [
     "Informal leadership", "Team Development", "Process adherence"
 ]
 
-cursor.execute("SELECT role FROM users WHERE username=%s", (employee,))
-role = cursor.fetchone()[0]
+# Fetch user's role and manager details
+cursor.execute("SELECT role, managed_by FROM users WHERE username=%s", (employee,))
+user_details = cursor.fetchone()
+user_role, managed_by = user_details if user_details else (None, None)
 
-with st.container():
-    # Admin Ratings
-    cursor.execute("""
-    SELECT rater, role, criteria, score, rating_type, timestamp
-    FROM user_ratings
-    WHERE ratee = %s AND rating_type = 'admin'
-    ORDER BY timestamp DESC
-    """, (employee,))
-    admin_ratings = cursor.fetchall()
-    st.markdown("<h2 style='text-align: center;'>Admin Ratings</h2>", unsafe_allow_html=True)
-    if admin_ratings:
-        ratings_by_criteria = {
-            crit: (score, timestamp, rater, r_role)
-            for rater, r_role, crit, score, r_type, timestamp in admin_ratings
-        }
-        col1, col2 = st.columns(2)
-        for col, section, criteria_list in [(col1, "Foundational", foundational_criteria), (col2, "Futuristic", futuristic_criteria)]:
-            with col:
-                st.markdown(f"### {section} Progress")
-                for crit in criteria_list:
-                    if crit in ratings_by_criteria:
-                        score, timestamp, rater, r_role = ratings_by_criteria[crit]
-                        st.markdown(f"""
-                            <div class='rating-card'>
-                                <b>{crit}</b>: <span class='rating-score'>{score}/10</span><br>
-                                <small>by <b>{rater}</b> ({r_role}) on {timestamp.strftime('%Y-%m-%d %H:%M')}</small>
-                            </div>
-                        """, unsafe_allow_html=True)
-        st.write("### Remark: ")
-        cursor.execute("Select remark from remarks where ratee = %s and rating_type = 'admin'", (employee,))
-        feedback = cursor.fetchone()
-        if feedback:
-            st.markdown(f"{feedback[0]}", unsafe_allow_html=True)
-        else:
-            st.info("No feedback provided by admin.")
-    else:
-        st.info("No admin ratings received yet.")
-st.divider()
-if role == 'employee':
-    foundational_criteria = [
-    "Humility", "Integrity", "Collegiality", "Attitude",
-    "Time Management", "Initiative", "Communication", "Compassion"
-    ]
-    futuristic_criteria = [
-        "Knowledge & Awareness", "Future readiness",
-        "Informal leadership", "Team Development", "Process adherence"
-    ]
+
+# --- Manager Ratings Section (Conditionally Displayed) ---
+st.markdown("<h2 style='text-align: center;'>Manager Ratings</h2>", unsafe_allow_html=True)
+
+# NEW: Check if the user is an employee and has a valid manager
+if user_role == 'employee' and managed_by and managed_by != 'XYZ':
     cursor.execute("""
     SELECT rater, role, criteria, score, rating_type, timestamp
     FROM user_ratings
@@ -139,7 +132,7 @@ if role == 'employee':
     ORDER BY timestamp DESC
     """, (employee,))
     manager_ratings = cursor.fetchall()
-    st.markdown("<h2 style='text-align: center;'>Manager Ratings</h2>", unsafe_allow_html=True)
+    
     if manager_ratings:
         ratings_by_criteria = {
             crit: (score, timestamp, rater, r_role)
@@ -159,9 +152,14 @@ if role == 'employee':
                             </div>
                         """, unsafe_allow_html=True)
     else:
-        st.info("No manager ratings received yet.")
-    st.divider()
-# Self Ratings
+        st.info("No manager ratings have been submitted yet.")
+else:
+    # Display message for users without a manager (e.g., other managers)
+    st.info("This user does not have a manager assigned.")
+
+st.divider()
+
+# --- Self Ratings Section (No changes needed here) ---
 with st.container():
     st.markdown("<h2 style='text-align: center;'>Self Ratings</h2>", unsafe_allow_html=True)
     cursor.execute("""
