@@ -3,6 +3,7 @@ import bcrypt
 import mysql.connector as connector
 import base64
 from pathlib import Path
+from itsdangerous import TimestampSigner, BadSignature, SignatureExpired
 
 # --- PAGE CONFIGURATION ---
 st.set_page_config(
@@ -10,7 +11,7 @@ st.set_page_config(
     page_icon="🔐",
     layout="wide"
 )
-
+signer = TimestampSigner("password123")
 # --- HELPER FUNCTION TO ENCODE IMAGES ---
 # This makes your app more portable by embedding the images directly in the code.
 def image_to_base64(path_to_image):
@@ -45,16 +46,30 @@ else:
     st.stop()
 
 # --- AUTO-LOGIN LOGIC (Corrected and Improved) ---
-if st.session_state.get("name"):
-    role = st.session_state.get("role")
-    if role == 'employee':
-        st.switch_page("pages/1_Employee_Dashboard.py")
-    elif role == 'manager':
-        st.switch_page("pages/2_Manager_Dashboard.py")
-    elif role == 'HR':
-        st.switch_page("pages/3_HR_Dashboard.py")
-    elif role == 'admin':
-        st.switch_page("pages/4_Admin_Panel.py")
+if not st.session_state.get("name"):
+    token = st.experimental_get_query_params().get("auth_token", [None])[0] or st.experimental_get_cookie("auth_token")
+    if token:
+        try:
+            decoded_email = signer.unsign(token, max_age=300).decode()
+            cursor.execute("SELECT * FROM users WHERE Email = %s", (decoded_email,))
+            user = cursor.fetchone()
+            if user:
+                username = user[5]
+                user_role = user[3]
+                st.session_state["name"] = username
+                st.session_state["role"] = user_role
+                if user_role == 'employee':
+                    st.switch_page("pages/1_Employee_Dashboard.py")
+                elif user_role == 'manager':
+                    st.switch_page("pages/2_Manager_Dashboard.py")
+                elif user_role == 'HR':
+                    st.switch_page("pages/3_HR_Dashboard.py")
+                elif user_role == 'admin':
+                    st.switch_page("pages/4_Admin_Panel.py")
+        except SignatureExpired:
+            st.warning("Session expired. Please log in again.")
+        except BadSignature:
+            st.error("Invalid session. Please log in again.")
 
 # --- LOAD ASSETS ---
 # Paths to your logo parts
@@ -224,6 +239,8 @@ with col2:
                 st.session_state["role"] = user_role
 
                 # Redirect based on user role
+                auth_token = signer.sign(email.encode()).decode()
+                st.set_cookie("auth_token", auth_token, max_age=300)
                 if user_role == 'employee':
                     st.switch_page("pages/1_Employee_Dashboard.py")
                 elif user_role == 'manager':
