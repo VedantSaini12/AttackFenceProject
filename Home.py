@@ -3,6 +3,8 @@ import bcrypt
 import mysql.connector as connector
 import base64
 from pathlib import Path
+import datetime
+import uuid
 
 # --- PAGE CONFIGURATION ---
 st.set_page_config(
@@ -43,6 +45,31 @@ if db:
     cursor = db.cursor()
 else:
     st.stop()
+
+@st.cache_resource
+def get_token_store():
+    return {}
+
+token_store = get_token_store()
+
+# --- TOKEN-BASED RE-AUTHENTICATION LOGIC ---
+if "token" in st.query_params:
+    token = st.query_params["token"]
+    if token in token_store:
+        token_data = token_store[token]
+        # Check if the token is still valid (within 5 minutes)
+        if datetime.datetime.now() - token_data['timestamp'] < datetime.timedelta(hours=24):
+            # Token is valid, re-establish the session
+            st.session_state["name"] = token_data['username']
+            st.session_state["role"] = token_data['role']
+            # The existing auto-login logic below will now trigger the redirect
+        else:
+            # Token has expired, remove it from the store and the URL
+            del token_store[token]
+            st.query_params.clear()
+    else:
+        # Invalid token found in URL, clear it
+        st.query_params.clear()
 
 # --- AUTO-LOGIN LOGIC (Corrected and Improved) ---
 if st.session_state.get("name"):
@@ -216,14 +243,30 @@ with col2:
             
             # New code for Home.py
             if user and bcrypt.checkpw(password.encode(), user[2].encode()):
-                # user[5] is username, user[3] is role
                 username = user[5]
                 user_role = user[3] 
+                
+                # Generate a unique token for the new session
+                new_token = str(uuid.uuid4())
 
+                # 1. Set session state including the NEW token
                 st.session_state["name"] = username
                 st.session_state["role"] = user_role
+                st.session_state["token"] = new_token # <-- THIS IS THE CRUCIAL ADDED LINE
 
-                # Redirect based on user role
+                # 2. Store the token details on the server
+                token_store[new_token] = {
+                    "username": username,
+                    "role": user_role,
+                    "timestamp": datetime.datetime.now()
+                }
+
+                # 3. Add the token to the URL's query parameters for persistence
+                st.query_params["token"] = new_token
+                
+                # --- END OF FIX ---
+
+                # Redirect based on user role (this part remains the same)
                 if user_role == 'employee':
                     st.switch_page("pages/1_Employee_Dashboard.py")
                 elif user_role == 'manager':
