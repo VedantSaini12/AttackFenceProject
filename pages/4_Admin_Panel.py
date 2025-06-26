@@ -1,64 +1,77 @@
 import streamlit as st
 import mysql.connector as connector
 import bcrypt
+import datetime
+import uuid
 
 # --- PAGE CONFIGURATION ---
 st.set_page_config(page_title="Admin Panel", page_icon="⚙️", layout="wide")
 
-# --- CORRECTED AUTHENTICATION GUARD ---
-
-# 1. Check if the user's name or role is missing from the session state
-if "name" not in st.session_state or "role" not in st.session_state:
-    
-    # 2. If so, check for a user in the URL query parameters
-    if "user" in st.query_params:
-        # Restore the name from the URL
-        name_from_url = st.query_params["user"]
-        st.session_state["name"] = name_from_url
-
-        # 3. THIS IS THE FIX: Re-fetch the role from the database
-        try:
-            db = connector.connect(host="localhost", user="root", password="sqladi@2710", database="auth")
-            cursor = db.cursor()
-            cursor.execute("SELECT role FROM users WHERE username = %s", (name_from_url,))
-            result = cursor.fetchone()
-            db.close()
-            
-            if result:
-                # If the role is found, restore it to the session and rerun the page
-                st.session_state["role"] = result[0]
-                st.rerun()
-            else:
-                # If the user from the URL is not valid, clear everything and stop
-                st.session_state.clear()
-                st.query_params.clear()
-                st.error("Invalid user session. Please log in again.")
-                st.stop()
-
-        except connector.Error as e:
-            st.error(f"Database error during authentication: {e}")
-            st.stop()
-            
-    else:
-        # If no user in session OR URL, deny access
-        st.error("No user logged in. Please log in first.")
-        if st.button("Go to Login"):
-            st.switch_page("Home.py")
+# --- DATABASE AND TOKEN STORE (This part is crucial and must be in every file) ---
+@st.cache_resource
+def get_db_connection():
+    try:
+        return connector.connect(host="localhost", user="root", password="sqladi@2710", database="auth")
+    except connector.Error:
+        st.error("Database connection failed. Please contact an administrator.")
         st.stop()
 
-# 4. If we get here, the user is authenticated.
-#    Ensure the user's name is in the URL for refresh persistence.
-st.query_params.user = st.session_state["name"]
+@st.cache_resource
+def get_token_store():
+    return {}
+
+db = get_db_connection()
+token_store = get_token_store()
+
+# --- START OF NEW, SECURE AUTHENTICATION GUARD ---
+def authenticate_user():
+    """
+    Checks session state and URL token to authenticate the user.
+    This function must be present in every protected page.
+    """
+    # 1. Check for a token in the URL's query parameters.
+    if "token" in st.query_params:
+        token = st.query_params["token"]
+        
+        # 2. Validate the token against the server-side token_store.
+        if token in token_store:
+            token_data = token_store[token]
+            
+            # 3. Check if the token has expired (e.g., 5-minute timeout).
+            if datetime.datetime.now() - token_data['timestamp'] < datetime.timedelta(hours=24):
+                # SUCCESS: Token is valid. Populate session state.
+                st.session_state["name"] = token_data['username']
+                st.session_state["role"] = token_data['role']
+                st.session_state["token"] = token # Keep the token in the session
+                return True
+            else:
+                # Token expired. Remove it from the store and URL.
+                del token_store[token]
+                st.query_params.clear()
+        else:
+            # Invalid token. Clear it from the URL.
+             st.query_params.clear()
+
+    # 4. If no valid token is found, deny access.
+    st.error("🚨 Access Denied. Please log in first.")
+    if st.button("Go to Login Page"):
+        st.switch_page("Home.py")
+    st.stop() # Halt execution of the page.
+
+# Run the authentication check at the very start of the script.
+if "name" not in st.session_state:
+    authenticate_user()
+
+# If authentication is successful, ensure the token remains in the URL.
+if "token" in st.session_state:
+    st.query_params.token = st.session_state["token"]
+
+# Define session variables for easy use in the rest of the page
 name = st.session_state["name"]
 role = st.session_state["role"]
+cursor = db.cursor()
 
-# --- MAIN DB CONNECTION & FINAL ROLE VERIFICATION ---
-try:
-    db = connector.connect(host="localhost", user="root", password="sqladi@2710", database="auth")
-    cursor = db.cursor()
-except connector.Error as e:
-    st.error(f"Database connection failed: {e}")
-    st.stop()
+# --- END OF THE NEW SECURE AUTHENTICATION GUARD ---
 
 # --- ADMIN PANEL UI ---
 st.title("Admin Control Panel ⚙️")
@@ -338,6 +351,14 @@ with tab2:
 # --- LOGOUT BUTTON ---
 st.write("---")
 if st.button("Logout", type="primary"):
+    # Get the token from session state before clearing it
+    token_to_remove = st.session_state.get("token")
+    
+    # Remove the token from the server-side store if it exists
+    if token_to_remove and token_to_remove in token_store:
+        del token_store[token_to_remove]
+    
+    # Clear the session state and URL
     st.session_state.clear()
     st.query_params.clear()
     st.switch_page("Home.py")
