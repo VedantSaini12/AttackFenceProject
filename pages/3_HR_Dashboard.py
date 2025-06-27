@@ -161,7 +161,7 @@ else:
     for emp in employees_to_show_edit:
         emp_username, emp_name, emp_role, emp_manager = emp
         with st.expander(f"**{emp_name}** ({emp_role})", icon="👤", expanded=False):
-            new_name = st.text_input(f"Full Name for {emp_name}", value=emp_name, key=f"name_{emp_username}")
+            new_name = st.text_input(f"New Name for {emp_name}", value=emp_name, key=f"name_{emp_username}")
             # Only allow changing manager for employees, not managers/HR
             if emp_role == "employee":
                 cursor.execute("SELECT username FROM users WHERE role = 'manager'")
@@ -204,106 +204,270 @@ else:
                 db.commit() 
                 if new_name != original_emp_username and emp_role == 'manager':
                     cursor.execute(
-                        "UPDATE users SET managed_by = %s WHERE managed_by = %s",
+                        "UPDATE users SET managed_by = %s WHER++" \
+                        "E managed_by = %s",
                         (new_name, original_emp_username)
                     )
+                    db.commit()
+                if new_name and new_name != original_emp_username:
+                    cursor.execute("UPDATE user_ratings SET rater = %s WHERE rater = %s", (new_name, original_emp_username))
+                    cursor.execute("UPDATE user_ratings SET ratee = %s WHERE ratee = %s", (new_name, original_emp_username))
+                    cursor.execute("UPDATE remarks SET rater = %s WHERE rater = %s", (new_name, original_emp_username))
+                    cursor.execute("UPDATE remarks SET ratee = %s WHERE ratee = %s", (new_name, original_emp_username))
                     db.commit()
                 
                 confirm_submit()
 
-# Pagination controls for edit section
-st.markdown(
-    """
-    <style>
-    div[data-testid="column"] > div {
-        display: flex;
-        justify-content: center;
-        align-items: center;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
+# CHECKLIST-CODE-STARTS-HERE
+# --- EVALUATION STATUS CHECKLIST ---
+st.markdown("## 📊 Evaluation Status Dashboard")
+st.markdown("---")
 
-st.write("---")
-
-# View All Employee Ratings Section
-st.subheader("View All Employee Ratings")
-# Your existing logic for displaying a searchable, paginated grid of employees,
-# with a "View Ratings" button that switches to Rating.py.
-# This is copied directly from your original file's "HR" section.
-# ...
-# (The full "View All Employee Ratings" code from your file is assumed here)
-# ...
-search_query = st.text_input("🔍 Search Employee by Name or Email", value="", key="search_employee")
-filtered_employees = [
-    emp for emp in employees
-    if search_query.lower() in emp[1].lower()] if search_query else employees
-
-# Pagination setup
-page_size = 9
-total_employees = len(filtered_employees)
-total_pages = (total_employees + page_size - 1) // page_size
-
-if "employee_page" not in st.session_state:
-    st.session_state["employee_page"] = 1
-
-# Reset page if search changes
-if search_query and st.session_state.get("last_search_query") != search_query:
-    st.session_state["employee_page"] = 1
-st.session_state["last_search_query"] = search_query
-
-current_page = st.session_state["employee_page"]
-start_idx = (current_page - 1) * page_size
-end_idx = start_idx + page_size
-employees_to_show = filtered_employees[start_idx:end_idx]
-if not employees_to_show:
-    st.warning("No employees found matching your search criteria.")
-
-# Display employee cards in a grid (3 per row)
-card_cols = st.columns(3)
-for idx, emp in enumerate(employees_to_show):
-    emp_username, emp_name, emp_role, emp_manager = emp
-    with card_cols[idx % 3]:
-        with st.container(border=True):
-            st.subheader(emp_name)
-            st.write(f"**Role:** {emp_role.title()}")
-            st.write(f"**Email:** {emp_username}")
-            st.write(f"**Manager:** {emp_manager if emp_manager else 'N/A'}")
-            if st.button(
-            "View Ratings  ↗",
-            key=f"view_ratings_{emp_username}",
-            use_container_width=True,
-            help="View rating summary for this employee"
-            ):
-                st.session_state["selected_employee"] = emp_name
-                st.switch_page("pages/Rating.py")
-
-# Pagination controls
-# Center align the row of buttons using markdown
-st.markdown(
-"""
+# Custom CSS for the checklist
+st.markdown("""
 <style>
-div[data-testid="column"] > div {
-    display: flex;
-    justify-content: center;
-    align-items: center;
+.checklist-container {
+    background: transparent;
+    padding: 0px;
+    border-radius: 0px;
+    margin: 0px;
+    box-shadow: none;
+}
+
+.manager-section {
+    background: rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 10px;
+    padding: 15px;
+    margin: 10px 0;
+}
+
+.employee-section {
+    background: rgba(255, 255, 255, 0.05);
+    backdrop-filter: blur(5px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    padding: 12px;
+    margin: 8px 0;
+    margin-left: 20px;
+}
+
+.status-complete {
+    color: #4CAF50;
+    font-weight: bold;
+}
+
+.status-pending {
+    color: #FF9800;
+    font-weight: bold;
+}
+
+.status-not-started {
+    color: #F44336;
+    font-weight: bold;
+}
+
+.manager-title {
+    color: #2E3440;
+    font-size: 18px;
+    font-weight: bold;
+    margin-bottom: 10px;
+}
+
+.employee-name {
+    color: #2E3440;
+    font-size: 16px;
+    font-weight: 500;
 }
 </style>
-""",
-unsafe_allow_html=True,
-)
-st.write("")
-if total_pages > 1:
-    btn_cols = st.columns(total_pages, gap="small")
-    for i in range(total_pages):
-        page_num = i + 1
-        with btn_cols[i]:
-            if st.button(f"{page_num}",use_container_width=True, key=f"employee_page_btn_{page_num}",type="primary" if page_num == current_page else "secondary"):
-                st.session_state["employee_page"] = page_num
-                st.rerun()
-else:
-    st.write("Unknown role.")
+""", unsafe_allow_html=True)
+
+
+# Fetch all managers and their employees
+cursor.execute("""
+    SELECT DISTINCT managed_by 
+    FROM users 
+    WHERE managed_by IS NOT NULL AND managed_by != ''
+    ORDER BY managed_by
+""")
+managers = [row[0] for row in cursor.fetchall()]
+
+st.markdown('<div class="checklist-container">', unsafe_allow_html=True)
+
+for manager in managers:
+    # Get manager's self-evaluation status (where rater = ratee)
+    cursor.execute("""
+        SELECT COUNT(DISTINCT criteria) 
+        FROM user_ratings 
+        WHERE rater = %s AND ratee = %s AND rating_type = 'self'
+    """, (manager, manager))
+    manager_self_eval_count = cursor.fetchone()[0]
+    manager_self_eval = manager_self_eval_count > 0
+    
+    # Manager section
+    st.markdown('<div class="manager-section">', unsafe_allow_html=True)
+    
+    manager_status = "✅ Complete" if manager_self_eval else "⏳ Pending"
+    status_class = "status-complete" if manager_self_eval else "status-pending"
+    
+    st.markdown(f"""
+    <div class="manager-title">
+        👔 Manager: {manager}
+    </div>
+    <div class="{status_class}">
+        Self-Evaluation: {manager_status}
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Get employees under this manager
+    cursor.execute("""
+        SELECT username 
+        FROM users 
+        WHERE managed_by = %s AND role = 'employee'
+        ORDER BY username
+    """, (manager,))
+    employees = [row[0] for row in cursor.fetchall()]
+    
+    if employees:
+        st.markdown("**📋 Employees under this manager:**")
+        
+        for employee in employees:
+            # Check employee's self-evaluation status
+            cursor.execute("""
+                SELECT COUNT(DISTINCT criteria) 
+                FROM user_ratings 
+                WHERE rater = %s AND ratee = %s AND rating_type = 'self'
+            """, (employee, employee))
+            emp_self_eval_count = cursor.fetchone()[0]
+            emp_self_eval = emp_self_eval_count > 0
+            
+            # Check if ANY manager has evaluated this employee
+            cursor.execute("""
+                SELECT COUNT(DISTINCT criteria) 
+                FROM user_ratings 
+                WHERE ratee = %s AND rating_type = 'manager'
+            """, (employee,))
+            manager_eval_ratings = cursor.fetchone()[0]
+            
+            cursor.execute("""
+                SELECT COUNT(*) 
+                FROM remarks 
+                WHERE ratee = %s AND rating_type = 'manager'
+            """, (employee,))
+            manager_eval_remarks = cursor.fetchone()[0]
+            
+            # Get the actual manager who evaluated (for display)
+            cursor.execute("""
+                SELECT rater 
+                FROM remarks 
+                WHERE ratee = %s AND rating_type = 'manager' 
+                LIMIT 1
+            """, (employee,))
+            actual_evaluator = cursor.fetchone()
+            evaluator_name = actual_evaluator[0] if actual_evaluator else manager
+            
+            manager_eval = (manager_eval_ratings > 0) or (manager_eval_remarks > 0)
+            
+            # Determine overall status
+            if emp_self_eval and manager_eval:
+                overall_status = "✅ Fully Complete"
+                status_class = "status-complete"
+                eval_text = f"Have been evaluated by manager {evaluator_name} too."
+            elif emp_self_eval and not manager_eval:
+                overall_status = "🔄 Self-Evaluation Done, Manager Pending"
+                status_class = "status-pending"
+                eval_text = f"Awaiting evaluation from manager {manager}."
+            elif not emp_self_eval and manager_eval:
+                overall_status = "🔄 Manager Done, Self-Evaluation Pending"
+                status_class = "status-pending"
+                eval_text = f"Have been evaluated by manager {evaluator_name}, but self-evaluation pending."
+            else:
+                overall_status = "❌ Not Started"
+                status_class = "status-not-started"
+                eval_text = f"No evaluations completed yet. Manager: {manager}"
+            
+            st.markdown(f"""
+            <div class="employee-section">
+                <div class="employee-name">👤 {employee}</div>
+                <div class="{status_class}">{overall_status}</div>
+                <div style="color: #B0BEC5; font-size: 14px; margin-top: 5px;">
+                    {eval_text}
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+st.markdown('</div>', unsafe_allow_html=True)
+
+# Summary statistics
+st.markdown("---")
+st.markdown("## 📈 Summary Statistics")
+
+col1, col2, col3, col4 = st.columns(4)
+
+# Calculate statistics
+cursor.execute("SELECT COUNT(*) FROM users WHERE role = 'employee'")
+total_employees = cursor.fetchone()[0]
+
+cursor.execute("""
+    SELECT COUNT(DISTINCT ratee) 
+    FROM user_ratings 
+    WHERE ratee IN (SELECT username FROM users WHERE role = 'employee') 
+    AND rating_type = 'self'
+""")
+employees_self_evaluated = cursor.fetchone()[0]
+
+# Check both user_ratings and remarks for manager evaluations
+cursor.execute("""
+    SELECT COUNT(DISTINCT emp.username)
+    FROM users emp
+    WHERE emp.role = 'employee' 
+    AND (
+        EXISTS (
+            SELECT 1 FROM user_ratings ur 
+            WHERE ur.ratee = emp.username AND ur.rating_type = 'manager'
+        )
+        OR EXISTS (
+            SELECT 1 FROM remarks r 
+            WHERE r.ratee = emp.username AND r.rating_type = 'manager'
+        )
+    )
+""")
+employees_manager_evaluated = cursor.fetchone()[0]
+
+cursor.execute("""
+    SELECT COUNT(DISTINCT emp.username)
+    FROM users emp
+    WHERE emp.role = 'employee' 
+    AND EXISTS (
+        SELECT 1 FROM user_ratings ur 
+        WHERE ur.ratee = emp.username AND ur.rating_type = 'self'
+    )
+    AND (
+        EXISTS (
+            SELECT 1 FROM user_ratings ur2 
+            WHERE ur2.ratee = emp.username AND ur2.rating_type = 'manager'
+        )
+        OR EXISTS (
+            SELECT 1 FROM remarks r 
+            WHERE r.ratee = emp.username AND r.rating_type = 'manager'
+        )
+    )
+""")
+fully_evaluated = cursor.fetchone()[0]
+
+with col1:
+    st.metric("Total Employees", total_employees)
+
+with col2:
+    st.metric("Self-Evaluations Done", f"{employees_self_evaluated}/{total_employees}")
+
+with col3:
+    st.metric("Manager Evaluations Done", f"{employees_manager_evaluated}/{total_employees}")
+
+with col4:
+    st.metric("Fully Evaluated", f"{fully_evaluated}/{total_employees}")
+
 
 # --- LOGOUT BUTTON ---
 st.write("---")
