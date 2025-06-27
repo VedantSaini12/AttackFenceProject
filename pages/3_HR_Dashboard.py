@@ -119,7 +119,7 @@ with st.form("add_employee_form", clear_on_submit=True):
 st.write("---")
 
 # Edit Existing Employees Section
-st.subheader("Edit Existing Employees")
+st.subheader("Edit Passwords for Existing Employees")
 # Your existing logic for listing, searching, and editing employees.
 # This includes the search bar, pagination, expanders for each employee,
 # and the update button.
