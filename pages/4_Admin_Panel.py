@@ -250,6 +250,12 @@ with tab1:
                         tuple(params)
                     )
                     db.commit()
+                if new_name and new_name != original_username:
+                    cursor.execute("UPDATE user_ratings SET rater = %s WHERE rater = %s", (new_name, original_username))
+                    cursor.execute("UPDATE user_ratings SET ratee = %s WHERE ratee = %s", (new_name, original_username))
+                    cursor.execute("UPDATE remarks SET rater = %s WHERE rater = %s", (new_name, original_username))
+                    cursor.execute("UPDATE remarks SET ratee = %s WHERE ratee = %s", (new_name, original_username))
+                    db.commit()
                     st.success(f"Admin '{user_to_edit}' updated successfully!")
                 else:
                     st.info("No changes made.")
@@ -274,11 +280,23 @@ with tab1:
                     )
                     db.commit()
                     if new_name and new_name != original_username:
+                        cursor.execute("UPDATE user_ratings SET rater = %s WHERE rater = %s", (new_name, original_username))
+                        cursor.execute("UPDATE user_ratings SET ratee = %s WHERE ratee = %s", (new_name, original_username))
+                        cursor.execute("UPDATE remarks SET rater = %s WHERE rater = %s", (new_name, original_username))
+                        cursor.execute("UPDATE remarks SET ratee = %s WHERE ratee = %s", (new_name, original_username))
+                        db.commit()
+                    if new_name and new_name != original_username:
                         cursor.execute(
                             "UPDATE users SET managed_by = %s WHERE managed_by = %s",
                             (new_name, original_username)
                         )
                         db.commit()
+                        if new_name and new_name != original_username:
+                            cursor.execute("UPDATE user_ratings SET rater = %s WHERE rater = %s", (new_name, original_username))
+                            cursor.execute("UPDATE user_ratings SET ratee = %s WHERE ratee = %s", (new_name, original_username))
+                            cursor.execute("UPDATE remarks SET rater = %s WHERE rater = %s", (new_name, original_username))
+                            cursor.execute("UPDATE remarks SET ratee = %s WHERE ratee = %s", (new_name, original_username))
+                            db.commit()
                     st.success(f"Manager '{user_to_edit}' updated successfully!")
                 else:
                     st.info("No changes made.")
@@ -319,6 +337,12 @@ with tab1:
                         tuple(params)
                     )
                     db.commit()
+                    if new_name and new_name != original_username:
+                        cursor.execute("UPDATE user_ratings SET rater = %s WHERE rater = %s", (new_name, original_username))
+                        cursor.execute("UPDATE user_ratings SET ratee = %s WHERE ratee = %s", (new_name, original_username))
+                        cursor.execute("UPDATE remarks SET rater = %s WHERE rater = %s", (new_name, original_username))
+                        cursor.execute("UPDATE remarks SET ratee = %s WHERE ratee = %s", (new_name, original_username))
+                        db.commit()
                     st.success(f"User '{user_to_edit}' updated successfully!")
                 else:
                     st.info("No changes made.")
