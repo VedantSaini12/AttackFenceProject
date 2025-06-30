@@ -223,8 +223,9 @@ else:
 
 # CHECKLIST-CODE-STARTS-HERE
 # --- EVALUATION STATUS CHECKLIST ---
-st.markdown("## 📊 Evaluation Status Dashboard")
 st.markdown("---")
+
+st.markdown("## 📊 Evaluation Status Dashboard")
 
 # Custom CSS for the checklist
 st.markdown("""
@@ -242,8 +243,8 @@ st.markdown("""
     backdrop-filter: blur(10px);
     border: 1px solid rgba(255, 255, 255, 0.18);
     border-radius: 10px;
-    padding: 15px;
-    margin: 10px 0;
+    padding: 1px;
+    margin: 0px 0;
 }
 
 .employee-section {
@@ -251,7 +252,7 @@ st.markdown("""
     backdrop-filter: blur(5px);
     border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 8px;
-    padding: 12px;
+    padding: 1px;
     margin: 8px 0;
     margin-left: 20px;
 }
