@@ -3,6 +3,7 @@ import mysql.connector as connector
 import bcrypt
 import datetime
 import uuid
+from notifications import notification_bell_component, add_notification
 
 # --- PAGE CONFIGURATION ---
 st.set_page_config(page_title="HR Dashboard", page_icon="📋", layout="wide")
@@ -72,6 +73,8 @@ role = st.session_state["role"]
 cursor = db.cursor()
 
 # --- END OF THE NEW SECURE AUTHENTICATION GUARD ---
+
+notification_bell_component(st.session_state.name)
 
 # --- HR DASHBOARD UI ---
 st.title("HR Dashboard 📋")

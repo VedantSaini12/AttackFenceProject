@@ -1,9 +1,9 @@
-# File: pages/2_Manager_Dashboard.py
-
 import streamlit as st
 import mysql.connector as connector
 import datetime
 import uuid
+
+from notifications import notification_bell_component, add_notification
 
 # --- PAGE CONFIGURATION ---
 st.set_page_config(page_title="Manager Dashboard", page_icon="👔", layout="wide")
@@ -124,6 +124,8 @@ try:
 except connector.Error as e:
     st.error(f"Database connection failed: {e}")
     st.stop()
+
+notification_bell_component(st.session_state.name)
 
 # --- MANAGER DASHBOARD UI ---
 st.title("Manager Dashboard 👔")
@@ -295,6 +297,12 @@ if employees:
                                 (name, employee_name, "manager", remark)
                             )
                         db.commit()
+                        add_notification(
+                            recipient=employee_name,
+                            sender=name, # 'name' is the manager's name from session_state
+                            message=f"Your manager, {name}, has completed your evaluation.",
+                            notification_type='evaluation_completed'
+                        )
                         st.success(f"Rating for {employee_name} submitted successfully!")
                         st.rerun()
 else:
@@ -429,6 +437,14 @@ with st.expander("Open Self-Evaluation Form", expanded=False):
                         (name, name, role, crit, score, "self")
                     )
             db.commit()
+            # --- ADD THIS NOTIFICATION LOGIC ---
+            add_notification(
+                recipient=employee_name,
+                sender=name,
+                message=f"Your manager, {name}, has completed your evaluation.",
+                notification_type='evaluation_completed'
+            )
+            # --- END OF NOTIFICATION LOGIC ---
             self_submit()
 
 # --- LOGOUT BUTTON ---

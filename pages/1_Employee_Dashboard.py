@@ -2,6 +2,7 @@ import streamlit as st
 import mysql.connector as connector
 import datetime
 import uuid
+from notifications import notification_bell_component, add_notification
 
 # --- PAGE CONFIGURATION ---
 st.set_page_config(page_title="Employee Dashboard", page_icon="👤", layout="wide")
@@ -75,6 +76,8 @@ try:
 except connector.Error as e:
     st.error(f"Database connection failed: {e}")
     st.stop()
+
+notification_bell_component(st.session_state.name)
 
 # --- EMPLOYEE DASHBOARD UI ---
 st.title("Employee Dashboard 👤")
@@ -277,6 +280,18 @@ with st.expander("Open Self-Evaluation Form", expanded=False):
                         (name, name, role, crit, score, "self")
                     )
             db.commit()
+            # --- ADD THIS NOTIFICATION LOGIC ---
+            cursor.execute("SELECT managed_by FROM users WHERE username = %s", (name,))
+            manager_name_result = cursor.fetchone()
+            if manager_name_result and manager_name_result[0]:
+                manager_name = manager_name_result[0]
+                add_notification(
+                    recipient=manager_name,
+                    sender=name,
+                    message=f"{name} has completed their self-evaluation. Please complete your review.",
+                    notification_type='self_evaluation_completed'
+                )
+            # --- END OF NOTIFICATION LOGIC ---
             self_submit()
 
 # --- LOGOUT BUTTON ---
