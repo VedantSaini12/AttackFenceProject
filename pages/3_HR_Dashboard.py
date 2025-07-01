@@ -12,7 +12,7 @@ st.set_page_config(page_title="HR Dashboard", page_icon="📋", layout="wide")
 @st.cache_resource
 def get_db_connection():
     try:
-        return connector.connect(host="localhost", user="root", password="sqladi@2710", database="auth")
+        return connector.connect(host="localhost", user="root", password="password", database="auth")
     except connector.Error:
         st.error("Database connection failed. Please contact an administrator.")
         st.stop()
@@ -292,7 +292,7 @@ st.markdown("""
 cursor.execute("""
     SELECT DISTINCT managed_by 
     FROM users 
-    WHERE managed_by IS NOT NULL AND managed_by != ''
+    WHERE managed_by IS NOT NULL AND managed_by != 'XYZ'
     ORDER BY managed_by
 """)
 managers = [row[0] for row in cursor.fetchall()]
@@ -308,22 +308,22 @@ for manager in managers:
     """, (manager, manager))
     manager_self_eval_count = cursor.fetchone()[0]
     manager_self_eval = manager_self_eval_count > 0
-    
+
     # Manager section
     st.markdown('<div class="manager-section">', unsafe_allow_html=True)
-    
+
     manager_status = "✅ Complete" if manager_self_eval else "⏳ Pending"
     status_class = "status-complete" if manager_self_eval else "status-pending"
-    
+
     st.markdown(f"""
     <div class="manager-title">
         👔 Manager: {manager}
-    </div>
     <div class="{status_class}">
         Self-Evaluation: {manager_status}
     </div>
+    </div>
     """, unsafe_allow_html=True)
-    
+
     # Get employees under this manager
     cursor.execute("""
         SELECT username 
@@ -332,145 +332,75 @@ for manager in managers:
         ORDER BY username
     """, (manager,))
     employees = [row[0] for row in cursor.fetchall()]
-    
+
     if employees:
-        st.markdown("**📋 Employees under this manager:**")
-        
-        for employee in employees:
-            # Check employee's self-evaluation status
-            cursor.execute("""
-                SELECT COUNT(DISTINCT criteria) 
-                FROM user_ratings 
-                WHERE rater = %s AND ratee = %s AND rating_type = 'self'
-            """, (employee, employee))
-            emp_self_eval_count = cursor.fetchone()[0]
-            emp_self_eval = emp_self_eval_count > 0
-            
-            # Check if ANY manager has evaluated this employee
-            cursor.execute("""
-                SELECT COUNT(DISTINCT criteria) 
-                FROM user_ratings 
-                WHERE ratee = %s AND rating_type = 'manager'
-            """, (employee,))
-            manager_eval_ratings = cursor.fetchone()[0]
-            
-            cursor.execute("""
-                SELECT COUNT(*) 
-                FROM remarks 
-                WHERE ratee = %s AND rating_type = 'manager'
-            """, (employee,))
-            manager_eval_remarks = cursor.fetchone()[0]
-            
-            # Get the actual manager who evaluated (for display)
-            cursor.execute("""
-                SELECT rater 
-                FROM remarks 
-                WHERE ratee = %s AND rating_type = 'manager' 
-                LIMIT 1
-            """, (employee,))
-            actual_evaluator = cursor.fetchone()
-            evaluator_name = actual_evaluator[0] if actual_evaluator else manager
-            
-            manager_eval = (manager_eval_ratings > 0) or (manager_eval_remarks > 0)
-            
-            # Determine overall status
-            if emp_self_eval and manager_eval:
-                overall_status = "✅ Fully Complete"
-                status_class = "status-complete"
-                eval_text = f"Have been evaluated by manager {evaluator_name} too."
-            elif emp_self_eval and not manager_eval:
-                overall_status = "🔄 Self-Evaluation Done, Manager Pending"
-                status_class = "status-pending"
-                eval_text = f"Awaiting evaluation from manager {manager}."
-            elif not emp_self_eval and manager_eval:
-                overall_status = "🔄 Manager Done, Self-Evaluation Pending"
-                status_class = "status-pending"
-                eval_text = f"Have been evaluated by manager {evaluator_name}, but self-evaluation pending."
-            else:
-                overall_status = "❌ Not Started"
-                status_class = "status-not-started"
-                eval_text = f"No evaluations completed yet. Manager: {manager}"
-            
-            st.markdown(f"""
-            <div class="employee-section">
-                <div class="employee-name">👤 {employee}</div>
-                <div class="{status_class}">{overall_status}</div>
-                <div style="color: #B0BEC5; font-size: 14px; margin-top: 5px;">
-                    {eval_text}
+        with st.expander(f"📋 Employees under {manager}"):
+            for employee in employees:
+                # Check employee's self-evaluation status
+                cursor.execute("""
+                    SELECT COUNT(DISTINCT criteria) 
+                    FROM user_ratings 
+                    WHERE rater = %s AND ratee = %s AND rating_type = 'self'
+                """, (employee, employee))
+                emp_self_eval_count = cursor.fetchone()[0]
+                emp_self_eval = emp_self_eval_count > 0
+
+                # Check if ANY manager has evaluated this employee
+                cursor.execute("""
+                    SELECT COUNT(DISTINCT criteria) 
+                    FROM user_ratings 
+                    WHERE ratee = %s AND rating_type = 'manager'
+                """, (employee,))
+                manager_eval_ratings = cursor.fetchone()[0]
+
+                cursor.execute("""
+                    SELECT COUNT(*) 
+                    FROM remarks 
+                    WHERE ratee = %s AND rating_type = 'manager'
+                """, (employee,))
+                manager_eval_remarks = cursor.fetchone()[0]
+
+                # Get the actual manager who evaluated (for display)
+                cursor.execute("""
+                    SELECT rater 
+                    FROM remarks 
+                    WHERE ratee = %s AND rating_type = 'manager' 
+                    LIMIT 1
+                """, (employee,))
+                actual_evaluator = cursor.fetchone()
+                evaluator_name = actual_evaluator[0] if actual_evaluator else manager
+
+                manager_eval = (manager_eval_ratings > 0) or (manager_eval_remarks > 0)
+
+                # Determine overall status
+                if emp_self_eval and manager_eval:
+                    overall_status = "✅ Fully Complete"
+                    status_class = "status-complete"
+                    eval_text = f"Have been evaluated by manager {evaluator_name} too."
+                elif emp_self_eval and not manager_eval:
+                    overall_status = "🔄 Self-Evaluation Done, Manager Pending"
+                    status_class = "status-pending"
+                    eval_text = f"Awaiting evaluation from manager {manager}."
+                elif not emp_self_eval and manager_eval:
+                    overall_status = "🔄 Manager Done, Self-Evaluation Pending"
+                    status_class = "status-pending"
+                    eval_text = f"Have been evaluated by manager {evaluator_name}, but self-evaluation pending."
+                else:
+                    overall_status = "❌ Not Started"
+                    status_class = "status-not-started"
+                    eval_text = f"No evaluations completed yet. Manager: {manager}"
+
+                st.markdown(f"""
+                <div class="employee-section">
+                    <div class="employee-name">👤 {employee}</div>
+                    <div class="{status_class}">{overall_status}</div>
+                    <div style="color: #B0BEC5; font-size: 14px; margin-top: 5px;">
+                        {eval_text}
+                    </div>
                 </div>
-            </div>
-            """, unsafe_allow_html=True)
+                """, unsafe_allow_html=True)
 
-st.markdown('</div>', unsafe_allow_html=True)
-
-# Summary statistics
-st.markdown("---")
-st.markdown("## 📈 Summary Statistics")
-
-col1, col2, col3, col4 = st.columns(4)
-
-# Calculate statistics
-cursor.execute("SELECT COUNT(*) FROM users WHERE role = 'employee'")
-total_employees = cursor.fetchone()[0]
-
-cursor.execute("""
-    SELECT COUNT(DISTINCT ratee) 
-    FROM user_ratings 
-    WHERE ratee IN (SELECT username FROM users WHERE role = 'employee') 
-    AND rating_type = 'self'
-""")
-employees_self_evaluated = cursor.fetchone()[0]
-
-# Check both user_ratings and remarks for manager evaluations
-cursor.execute("""
-    SELECT COUNT(DISTINCT emp.username)
-    FROM users emp
-    WHERE emp.role = 'employee' 
-    AND (
-        EXISTS (
-            SELECT 1 FROM user_ratings ur 
-            WHERE ur.ratee = emp.username AND ur.rating_type = 'manager'
-        )
-        OR EXISTS (
-            SELECT 1 FROM remarks r 
-            WHERE r.ratee = emp.username AND r.rating_type = 'manager'
-        )
-    )
-""")
-employees_manager_evaluated = cursor.fetchone()[0]
-
-cursor.execute("""
-    SELECT COUNT(DISTINCT emp.username)
-    FROM users emp
-    WHERE emp.role = 'employee' 
-    AND EXISTS (
-        SELECT 1 FROM user_ratings ur 
-        WHERE ur.ratee = emp.username AND ur.rating_type = 'self'
-    )
-    AND (
-        EXISTS (
-            SELECT 1 FROM user_ratings ur2 
-            WHERE ur2.ratee = emp.username AND ur2.rating_type = 'manager'
-        )
-        OR EXISTS (
-            SELECT 1 FROM remarks r 
-            WHERE r.ratee = emp.username AND r.rating_type = 'manager'
-        )
-    )
-""")
-fully_evaluated = cursor.fetchone()[0]
-
-with col1:
-    st.metric("Total Employees", total_employees)
-
-with col2:
-    st.metric("Self-Evaluations Done", f"{employees_self_evaluated}/{total_employees}")
-
-with col3:
-    st.metric("Manager Evaluations Done", f"{employees_manager_evaluated}/{total_employees}")
-
-with col4:
-    st.metric("Fully Evaluated", f"{fully_evaluated}/{total_employees}")
+    st.markdown('</div>', unsafe_allow_html=True)
 
 
 # --- LOGOUT BUTTON ---

@@ -3,6 +3,8 @@ import mysql.connector as connector
 import bcrypt
 import datetime
 import uuid
+import random
+import string
 
 # --- PAGE CONFIGURATION ---
 st.set_page_config(page_title="Admin Panel", page_icon="⚙️", layout="wide")
@@ -11,7 +13,7 @@ st.set_page_config(page_title="Admin Panel", page_icon="⚙️", layout="wide")
 @st.cache_resource
 def get_db_connection():
     try:
-        return connector.connect(host="localhost", user="root", password="sqladi@2710", database="auth")
+        return connector.connect(host="localhost", user="root", password="password", database="auth")
     except connector.Error:
         st.error("Database connection failed. Please contact an administrator.")
         st.stop()
@@ -142,7 +144,7 @@ with tab1:
             st.session_state.new_user_role = 'Employee'
             st.session_state.new_user_email = ''
             st.session_state.new_user_password = ''
-            st.session_state.new_user_managed_by = None
+            st.session_state.new_user_managed_by = ''
         
         # --- WIDGETS ---
         st.text_input("Name", key='new_user_name', placeholder="Enter name")
@@ -159,7 +161,24 @@ with tab1:
             else:
                 st.warning("No managers available. Please create a manager first.")
 
-        st.text_input("Password", type="password", key='new_user_password', placeholder="Enter password")
+        def generate_random_password(length=8):
+            chars = string.ascii_letters + string.digits
+            return ''.join(random.choices(chars, k=length))
+
+        col1, col2 = st.columns([5, 1])
+        with col2:
+            st.markdown("<br>", unsafe_allow_html=True)  # Add some space
+            if st.button("Generate Random Password", type="primary"):
+                # Only update session state and rerun, do not update after widget instantiation
+                st.session_state.new_user_password = generate_random_password()
+                st.rerun()
+        with col1:
+            password_input = st.text_input(
+                "Password",
+                type="password",
+                key='new_user_password',
+                placeholder="Enter password"
+            )
 
         # --- BUTTON ---
         # The button's only job is to trigger the comprehensive callback.
