@@ -137,7 +137,7 @@ employees = cursor.fetchall()
 search_query_edit = st.text_input("🔍 Search Employee by Name", value="", key="search_employee_edit")
 filtered_employees_edit = [
     emp for emp in employees
-    if search_query_edit.lower() in emp[1].lower() or search_query_edit.lower() in emp[0].lower()
+    if search_query_edit.lower() in emp[1].lower()
 ] if search_query_edit else employees
 
 # Pagination setup
@@ -207,8 +207,7 @@ else:
                 db.commit() 
                 if new_name != original_emp_username and emp_role == 'manager':
                     cursor.execute(
-                        "UPDATE users SET managed_by = %s WHER++" \
-                        "E managed_by = %s",
+                        "UPDATE users SET managed_by = %s WHERE managed_by = %s",
                         (new_name, original_emp_username)
                     )
                     db.commit()
@@ -220,6 +219,24 @@ else:
                     db.commit()
                 
                 confirm_submit()
+
+    # Pagination controls
+    col1, col2, col3 = st.columns([1, 5, 1])
+    with col1:
+        if current_page_edit > 1:
+            if st.button("⬅️ Previous", key="prev_edit", use_container_width=True):
+                st.session_state["employee_edit_page"] -= 1
+                st.rerun()
+    with col2:
+        st.markdown(
+            f"<div style='text-align:center;'>Page {current_page_edit} of {total_pages_edit}</div>",
+            unsafe_allow_html=True
+        )
+    with col3:
+        if current_page_edit < total_pages_edit:
+            if st.button("Next ➡️", key="next_edit", use_container_width=True):
+                st.session_state["employee_edit_page"] += 1
+                st.rerun()
 
 # CHECKLIST-CODE-STARTS-HERE
 # --- EVALUATION STATUS CHECKLIST ---
