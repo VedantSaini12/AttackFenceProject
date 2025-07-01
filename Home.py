@@ -259,27 +259,29 @@ with col2:
             cursor.execute("SELECT * FROM users WHERE Email = %s", (email,))
             user = cursor.fetchone()
 
-            if user and bcrypt.checkpw(password.encode(), user[2].encode()):
-                # Successful login, reset login attempts
+            # Case 1: User email does not exist in the database at all.
+            if not user:
+                error_placeholder.warning("⚠️ User not found. Please check your email and try again.")
+
+            # Case 2: User exists, now check if the password is correct.
+            elif bcrypt.checkpw(password.encode(), user[2].encode()):
+                # Successful login: reset any previous login attempts
                 cursor.execute("DELETE FROM login_attempts WHERE email = %s", (email,))
                 db.commit()
 
+                # --- This is your existing success logic, no changes needed here ---
                 username = user[5]
                 user_role = user[3]
                 new_token = str(uuid.uuid4())
-
                 st.session_state["name"] = username
                 st.session_state["role"] = user_role
                 st.session_state["token"] = new_token
-
                 token_store[new_token] = {
                     "username": username,
                     "role": user_role,
                     "timestamp": now
                 }
-
                 st.query_params["token"] = new_token
-
                 if user_role == 'employee':
                     st.switch_page("pages/1_Employee_Dashboard.py")
                 elif user_role == 'manager':
@@ -290,23 +292,25 @@ with col2:
                     st.switch_page("pages/4_Admin_Panel.py")
                 else:
                     st.error("Unknown user role. Please contact support.")
+
+            # Case 3: User exists, but the password was incorrect.
             else:
-                # Failed login, record attempt
+                # Log a failed attempt for an EXISTING user. This will not cause an error.
                 cursor.execute("INSERT INTO login_attempts (email, attempt_time) VALUES (%s, %s)", (email, now))
                 db.commit()
 
-                # Count attempts in the last 10 minutes
+                # Count attempts in the last 10 minutes to check for blocking
                 cursor.execute("SELECT COUNT(*) FROM login_attempts WHERE email = %s AND attempt_time > %s", (email, now - datetime.timedelta(minutes=BLOCK_MINUTES)))
                 attempt_count = cursor.fetchone()[0]
 
                 if attempt_count >= MAX_ATTEMPTS:
-                    # Block the user
+                    # Block the user if they have too many failed attempts
                     cursor.execute("INSERT INTO blocked_users (email, blocked_at) VALUES (%s, %s)", (email, now))
                     db.commit()
-                    error_placeholder.error("Too many failed attempts. You are blocked for 10 minutes.")
+                    error_placeholder.error(f"Too many failed attempts. You are blocked for {BLOCK_MINUTES} minutes.")
                 else:
-                    # Show warning with attempts left
-                    error_placeholder.warning(f"⚠ Invalid credentials. Attempts left: {MAX_ATTEMPTS - attempt_count}")
+                    # Show a warning with the number of attempts remaining
+                    error_placeholder.warning(f"⚠️ Invalid password. Attempts left: {MAX_ATTEMPTS - attempt_count}")
         else:
             error_placeholder.warning("⚠ Please enter both Email and password")
             
