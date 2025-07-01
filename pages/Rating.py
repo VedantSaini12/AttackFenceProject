@@ -1,10 +1,89 @@
 import streamlit as st
 import mysql.connector as connector
+import datetime
+import uuid
 
 # Page Config
-st.set_page_config(page_title="Employee Ratings Dashboard", layout="wide")
+st.set_page_config(page_title="Evaluation Report", layout="wide")
 
-# Custom Styles
+# --- DATABASE AND TOKEN STORE (This part is crucial and must be in every file) ---
+@st.cache_resource
+def get_db_connection():
+    try:
+        return connector.connect(host="localhost", user="root", password="sqladi@2710", database="auth")
+    except connector.Error:
+        st.error("Database connection failed. Please contact an administrator.")
+        st.stop()
+
+@st.cache_resource
+def get_token_store():
+    return {}
+
+db = get_db_connection()
+token_store = get_token_store()
+
+# --- START OF NEW, SECURE AUTHENTICATION GUARD ---
+def authenticate_user():
+    """
+    Checks session state and URL token to authenticate the user.
+    This function must be present in every protected page.
+    """
+    # 1. Check for a token in the URL's query parameters.
+    if "token" in st.query_params:
+        token = st.query_params["token"]
+        
+        # 2. Validate the token against the server-side token_store.
+        if token in token_store:
+            token_data = token_store[token]
+            
+            # 3. Check if the token has expired (e.g., 5-minute timeout).
+            if datetime.datetime.now() - token_data['timestamp'] < datetime.timedelta(hours=24):
+                # SUCCESS: Token is valid. Populate session state.
+                st.session_state["name"] = token_data['username']
+                st.session_state["role"] = token_data['role']
+                st.session_state["token"] = token # Keep the token in the session
+                return True
+            else:
+                # Token expired. Remove it from the store and URL.
+                del token_store[token]
+                st.query_params.clear()
+        else:
+            # Invalid token. Clear it from the URL.
+             st.query_params.clear()
+
+    # 4. If no valid token is found, deny access.
+    st.error("🚨 Access Denied. Please log in first.")
+    if st.button("Go to Login Page"):
+        st.switch_page("Home.py")
+    st.stop() # Halt execution of the page.
+
+# Run the authentication check at the very start of the script.
+if "name" not in st.session_state:
+    authenticate_user()
+
+# If authentication is successful, ensure the token remains in the URL.
+if "token" in st.session_state:
+    st.query_params.token = st.session_state["token"]
+
+# Define session variables for easy use in the rest of the page
+name = st.session_state["name"]
+role = st.session_state["role"]
+cursor = db.cursor()
+
+# --- END OF THE NEW SECURE AUTHENTICATION GUARD ---
+    
+# --- BACK BUTTON ---
+if st.button("←"):
+    role = st.session_state.get("role")
+    if role == 'HR':
+        st.switch_page("pages/3_HR_Dashboard.py")
+    elif role == 'admin':
+        st.switch_page("pages/4_Admin_Panel.py")
+    else:
+        # Fallback for any other roles or edge cases
+        st.switch_page("Home.py")
+
+# --- Custom Styles ---
 st.markdown("""
     <style>
     .rating-card {
@@ -24,28 +103,24 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# MySQL connection
-try:
-    db = connector.connect(
-        host="localhost",
-        user="root",
-        password="password"
-    )
-    cursor = db.cursor()
-    cursor.execute("USE auth")
-except Exception as e:
-    st.error(f"Database connection failed: {e}")
-    st.stop()
-
-# Session check
+# --- Session check for selected employee ---
+# This check now runs AFTER the main authentication check.
 employee = st.session_state.get("selected_employee")
 if not employee:
-    st.error("No employee selected. Please select an employee first.")
-    if st.button("Go to Dashboard"):
-        st.session_state.selected_employee = None
-        st.switch_page("pages/Dashboard.py")
+    st.error("No employee selected. Please return to your dashboard to select an employee.")
+    if st.button("Go to My Dashboard"):
+        role = st.session_state.get("role")
+        if role == 'HR':
+            st.switch_page("pages/3_HR_Dashboard.py")
+        elif role == 'admin':
+            st.switch_page("pages/4_Admin_Panel.py")
+        # Add other roles if they can access this page
+        else:
+            # Default fallback
+            st.switch_page("Home.py")
     st.stop()
 
+# Define criteria lists
 foundational_criteria = [
     "Humility", "Integrity", "Collegiality", "Attitude",
     "Time Management", "Initiative", "Communication", "Compassion"
@@ -54,87 +129,95 @@ futuristic_criteria = [
     "Knowledge & Awareness", "Future readiness",
     "Informal leadership", "Team Development", "Process adherence"
 ]
+development_criteria = [
+    "Quality of Work", "Task Completion", "Timeline Adherence"
+]
 
-cursor.execute("SELECT role FROM users WHERE username=%s", (employee,))
-role = cursor.fetchone()[0]
+other_aspects_criteria = [
+    "Collaboration", "Innovation", "Special Situation"
+]
 
-with st.container():
-    # Admin Ratings
+# Fetch user's role and manager details
+cursor.execute("SELECT role, managed_by FROM users WHERE username=%s", (employee,))
+user_details = cursor.fetchone()
+user_role, managed_by = user_details if user_details else (None, None)
+
+
+# --- Manager Ratings Section (Conditionally Displayed) ---
+st.markdown("<h2 style='text-align: center;'>Manager Ratings</h2>", unsafe_allow_html=True)
+
+if user_role == 'employee' and managed_by and managed_by != 'XYZ':
     cursor.execute("""
-    SELECT rater, role, criteria, score, rating_type, timestamp
-    FROM user_ratings
-    WHERE ratee = %s AND rating_type = 'admin'
-    ORDER BY timestamp DESC
-    """, (employee,))
-    admin_ratings = cursor.fetchall()
-    st.markdown("<h2 style='text-align: center;'>Admin Ratings</h2>", unsafe_allow_html=True)
-    if admin_ratings:
-        ratings_by_criteria = {
-            crit: (score, timestamp, rater, r_role)
-            for rater, r_role, crit, score, r_type, timestamp in admin_ratings
-        }
-        col1, col2 = st.columns(2)
-        for col, section, criteria_list in [(col1, "Foundational", foundational_criteria), (col2, "Futuristic", futuristic_criteria)]:
-            with col:
-                st.markdown(f"### {section} Progress")
-                for crit in criteria_list:
-                    if crit in ratings_by_criteria:
-                        score, timestamp, rater, r_role = ratings_by_criteria[crit]
-                        st.markdown(f"""
-                            <div class='rating-card'>
-                                <b>{crit}</b>: <span class='rating-score'>{score}/10</span><br>
-                                <small>by <b>{rater}</b> ({r_role}) on {timestamp.strftime('%Y-%m-%d %H:%M')}</small>
-                            </div>
-                        """, unsafe_allow_html=True)
-        st.write("### Remark: ")
-        cursor.execute("Select remark from remarks where ratee = %s and rating_type = 'admin'", (employee,))
-        feedback = cursor.fetchone()
-        if feedback:
-            st.markdown(f"{feedback[0]}", unsafe_allow_html=True)
-        else:
-            st.info("No feedback provided by admin.")
-    else:
-        st.info("No admin ratings received yet.")
-st.divider()
-if role == 'employee':
-    foundational_criteria = [
-    "Humility", "Integrity", "Collegiality", "Attitude",
-    "Time Management", "Initiative", "Communication", "Compassion"
-    ]
-    futuristic_criteria = [
-        "Knowledge & Awareness", "Future readiness",
-        "Informal leadership", "Team Development", "Process adherence"
-    ]
-    cursor.execute("""
-    SELECT rater, role, criteria, score, rating_type, timestamp
-    FROM user_ratings
-    WHERE ratee = %s AND rating_type = 'manager'
-    ORDER BY timestamp DESC
+        SELECT rater, role, criteria, score, timestamp
+        FROM user_ratings
+        WHERE ratee = %s AND rating_type = 'manager'
+        ORDER BY timestamp DESC
     """, (employee,))
     manager_ratings = cursor.fetchall()
-    st.markdown("<h2 style='text-align: center;'>Manager Ratings</h2>", unsafe_allow_html=True)
+    
     if manager_ratings:
         ratings_by_criteria = {
             crit: (score, timestamp, rater, r_role)
-            for rater, r_role, crit, score, r_type, timestamp in manager_ratings
+            for rater, r_role, crit, score, timestamp in manager_ratings
         }
+        
         col1, col2 = st.columns(2)
-        for col, section, criteria_list in [(col1, "Foundational", foundational_criteria), (col2, "Futuristic", futuristic_criteria)]:
-            with col:
-                st.markdown(f"### {section} Progress")
-                for crit in criteria_list:
-                    if crit in ratings_by_criteria:
-                        score, timestamp, rater, r_role = ratings_by_criteria[crit]
-                        st.write(f"""
-                            <div class='rating-card'>
-                                <b>{crit}</b>: <span class='rating-score'>{score}/10</span><br>
-                                <small>by <b>{rater}</b> ({r_role}) on {timestamp.strftime('%Y-%m-%d %H:%M')}</small>
-                            </div>
-                        """, unsafe_allow_html=True)
+        
+        # Display Development and Foundational in the first column
+        with col1:
+            st.markdown("### Development (70%)")
+            for crit in development_criteria:
+                if crit in ratings_by_criteria:
+                    score, timestamp, rater, r_role = ratings_by_criteria[crit]
+                    st.write(f"""
+                        <div class='rating-card'>
+                            <b>{crit}</b>: <span class='rating-score'>{score}/10</span><br>
+                            <small>by <b>{rater}</b> on {timestamp.strftime('%Y-%m-%d')}</small>
+                        </div>
+                    """, unsafe_allow_html=True)
+
+            st.markdown("### Foundational Progress")
+            for crit in foundational_criteria:
+                if crit in ratings_by_criteria:
+                    score, timestamp, rater, r_role = ratings_by_criteria[crit]
+                    st.write(f"""
+                        <div class='rating-card'>
+                            <b>{crit}</b>: <span class='rating-score'>{score}/10</span><br>
+                            <small>by <b>{rater}</b> on {timestamp.strftime('%Y-%m-%d')}</small>
+                        </div>
+                    """, unsafe_allow_html=True)
+
+        # Display Other Aspects and Futuristic in the second column
+        with col2:
+            st.markdown("### Other Aspects (30%)")
+            for crit in other_aspects_criteria:
+                if crit in ratings_by_criteria:
+                    score, timestamp, rater, r_role = ratings_by_criteria[crit]
+                    st.write(f"""
+                        <div class='rating-card'>
+                            <b>{crit}</b>: <span class='rating-score'>{score}/10</span><br>
+                            <small>by <b>{rater}</b> on {timestamp.strftime('%Y-%m-%d')}</small>
+                        </div>
+                    """, unsafe_allow_html=True)
+            
+            st.markdown("### Futuristic Progress")
+            for crit in futuristic_criteria:
+                if crit in ratings_by_criteria:
+                    score, timestamp, rater, r_role = ratings_by_criteria[crit]
+                    st.write(f"""
+                        <div class='rating-card'>
+                            <b>{crit}</b>: <span class='rating-score'>{score}/10</span><br>
+                            <small>by <b>{rater}</b> on {timestamp.strftime('%Y-%m-%d')}</small>
+                        </div>
+                    """, unsafe_allow_html=True)
     else:
-        st.info("No manager ratings received yet.")
-    st.divider()
-# Self Ratings
+        st.info("No manager ratings have been submitted yet.")
+else:
+    st.info("This user does not have a manager assigned.")
+
+st.divider()
+
+# --- Self Ratings Section (No changes needed here) ---
 with st.container():
     st.markdown("<h2 style='text-align: center;'>Self Ratings</h2>", unsafe_allow_html=True)
     cursor.execute("""
@@ -144,19 +227,56 @@ with st.container():
     self_ratings = cursor.fetchall()
 
     if self_ratings:
+        ratings_by_criteria = {crit: (score, ts) for crit, score, ts in self_ratings}
+        
         col1, col2 = st.columns(2)
-        for col, section, criteria_list in [(col1, "Foundational", foundational_criteria), (col2, "Futuristic", futuristic_criteria)]:
-            with col:
-                st.markdown(f"### {section} Progress")
-                for crit in criteria_list:
-                    matches = [r for r in self_ratings if r[0] == crit]
-                    if matches:
-                        score, timestamp = matches[0][1], matches[0][2]
-                        st.markdown(f"""
-                            <div class='rating-card'>
-                                <b>{crit}</b>: <span class='rating-score'>{score}/10</span><br>
-                                <small>submitted on {timestamp.strftime('%Y-%m-%d %H:%M')}</small>
-                            </div>
-                        """, unsafe_allow_html=True)
+
+        # Display Development and Foundational in the first column
+        with col1:
+            st.markdown("### Development (70%)")
+            for crit in development_criteria:
+                if crit in ratings_by_criteria:
+                    score, timestamp = ratings_by_criteria[crit]
+                    st.markdown(f"""
+                        <div class='rating-card'>
+                            <b>{crit}</b>: <span class='rating-score'>{score}/10</span><br>
+                            <small>submitted on {timestamp.strftime('%Y-%m-%d')}</small>
+                        </div>
+                    """, unsafe_allow_html=True)
+
+            st.markdown("### Foundational Progress")
+            for crit in foundational_criteria:
+                if crit in ratings_by_criteria:
+                    score, timestamp = ratings_by_criteria[crit]
+                    st.markdown(f"""
+                        <div class='rating-card'>
+                            <b>{crit}</b>: <span class='rating-score'>{score}/10</span><br>
+                            <small>submitted on {timestamp.strftime('%Y-%m-%d')}</small>
+                        </div>
+                    """, unsafe_allow_html=True)
+
+        # Display Other Aspects and Futuristic in the second column
+        with col2:
+            st.markdown("### Other Aspects (30%)")
+            for crit in other_aspects_criteria:
+                if crit in ratings_by_criteria:
+                    score, timestamp = ratings_by_criteria[crit]
+                    st.markdown(f"""
+                        <div class='rating-card'>
+                            <b>{crit}</b>: <span class='rating-score'>{score}/10</span><br>
+                            <small>submitted on {timestamp.strftime('%Y-%m-%d')}</small>
+                        </div>
+                    """, unsafe_allow_html=True)
+
+            st.markdown("### Futuristic Progress")
+            for crit in futuristic_criteria:
+                if crit in ratings_by_criteria:
+                    score, timestamp = ratings_by_criteria[crit]
+                    st.markdown(f"""
+                        <div class='rating-card'>
+                            <b>{crit}</b>: <span class='rating-score'>{score}/10</span><br>
+                            <small>submitted on {timestamp.strftime('%Y-%m-%d')}</small>
+                        </div>
+                    """, unsafe_allow_html=True)
     else:
         st.info("No self ratings submitted yet.")

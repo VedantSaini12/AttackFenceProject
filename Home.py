@@ -3,6 +3,8 @@ import bcrypt
 import mysql.connector as connector
 import base64
 from pathlib import Path
+import datetime
+import uuid
 
 # --- PAGE CONFIGURATION ---
 st.set_page_config(
@@ -30,7 +32,7 @@ def get_db_connection():
         db = connector.connect(
             host="localhost",
             user="root",
-            password="password",
+            password="sqladi@2710",
             database="auth"
         )
         return db
@@ -43,6 +45,43 @@ if db:
     cursor = db.cursor()
 else:
     st.stop()
+
+@st.cache_resource
+def get_token_store():
+    return {}
+
+token_store = get_token_store()
+
+# --- TOKEN-BASED RE-AUTHENTICATION LOGIC ---
+if "token" in st.query_params:
+    token = st.query_params["token"]
+    if token in token_store:
+        token_data = token_store[token]
+        # Check if the token is still valid (within 5 minutes)
+        if datetime.datetime.now() - token_data['timestamp'] < datetime.timedelta(hours=24):
+            # Token is valid, re-establish the session
+            st.session_state["name"] = token_data['username']
+            st.session_state["role"] = token_data['role']
+            # The existing auto-login logic below will now trigger the redirect
+        else:
+            # Token has expired, remove it from the store and the URL
+            del token_store[token]
+            st.query_params.clear()
+    else:
+        # Invalid token found in URL, clear it
+        st.query_params.clear()
+
+# --- AUTO-LOGIN LOGIC (Corrected and Improved) ---
+if st.session_state.get("name"):
+    role = st.session_state.get("role")
+    if role == 'employee':
+        st.switch_page("pages/1_Employee_Dashboard.py")
+    elif role == 'manager':
+        st.switch_page("pages/2_Manager_Dashboard.py")
+    elif role == 'HR':
+        st.switch_page("pages/3_HR_Dashboard.py")
+    elif role == 'admin':
+        st.switch_page("pages/4_Admin_Panel.py")
 
 # --- LOAD ASSETS ---
 # Paths to your logo parts
@@ -197,17 +236,79 @@ with col2:
         login_button = st.form_submit_button(label="Login")
 
     if login_button:
+        MAX_ATTEMPTS = 3
+        BLOCK_MINUTES = 10
+        now = datetime.datetime.now()
+
         if email and password:
+            # Check if the user is blocked
+            cursor.execute("SELECT blocked_at FROM blocked_users WHERE email = %s", (email,))
+            blocked = cursor.fetchone()
+
+            if blocked:
+                if now - blocked[0] > datetime.timedelta(minutes=BLOCK_MINUTES):
+                    # Block has expired, remove it
+                    cursor.execute("DELETE FROM blocked_users WHERE email = %s", (email,))
+                    db.commit()
+                else:
+                    # User is still blocked
+                    error_placeholder.error("You are temporarily blocked. Try again later.")
+                    st.stop()
+
+            # Check user credentials
             cursor.execute("SELECT * FROM users WHERE Email = %s", (email,))
             user = cursor.fetchone()
+
             if user and bcrypt.checkpw(password.encode(), user[2].encode()):
-                st.session_state["name"] = user[5]  # Assuming index 5 is the username
-                st.switch_page("pages/Dashboard.py")
+                # Successful login, reset login attempts
+                cursor.execute("DELETE FROM login_attempts WHERE email = %s", (email,))
+                db.commit()
+
+                username = user[5]
+                user_role = user[3]
+                new_token = str(uuid.uuid4())
+
+                st.session_state["name"] = username
+                st.session_state["role"] = user_role
+                st.session_state["token"] = new_token
+
+                token_store[new_token] = {
+                    "username": username,
+                    "role": user_role,
+                    "timestamp": now
+                }
+
+                st.query_params["token"] = new_token
+
+                if user_role == 'employee':
+                    st.switch_page("pages/1_Employee_Dashboard.py")
+                elif user_role == 'manager':
+                    st.switch_page("pages/2_Manager_Dashboard.py")
+                elif user_role == 'HR':
+                    st.switch_page("pages/3_HR_Dashboard.py")
+                elif user_role == 'admin':
+                    st.switch_page("pages/4_Admin_Panel.py")
+                else:
+                    st.error("Unknown user role. Please contact support.")
             else:
-                # Display the styled error message
-                error_placeholder.markdown('<p class="error-message alert alert-warning">⚠️Invalid Email or password</p>', unsafe_allow_html=True)
+                # Failed login, record attempt
+                cursor.execute("INSERT INTO login_attempts (email, attempt_time) VALUES (%s, %s)", (email, now))
+                db.commit()
+
+                # Count attempts in the last 10 minutes
+                cursor.execute("SELECT COUNT(*) FROM login_attempts WHERE email = %s AND attempt_time > %s", (email, now - datetime.timedelta(minutes=BLOCK_MINUTES)))
+                attempt_count = cursor.fetchone()[0]
+
+                if attempt_count >= MAX_ATTEMPTS:
+                    # Block the user
+                    cursor.execute("INSERT INTO blocked_users (email, blocked_at) VALUES (%s, %s)", (email, now))
+                    db.commit()
+                    error_placeholder.error("Too many failed attempts. You are blocked for 10 minutes.")
+                else:
+                    # Show warning with attempts left
+                    error_placeholder.warning(f"⚠ Invalid credentials. Attempts left: {MAX_ATTEMPTS - attempt_count}")
         else:
-            error_placeholder.markdown('<p class="error-message alert alert-warning">⚠️Please enter both Email and password</p>', unsafe_allow_html=True)
+            error_placeholder.warning("⚠ Please enter both Email and password")
             
     # Close the container divs
     st.markdown('</div>', unsafe_allow_html=True)
