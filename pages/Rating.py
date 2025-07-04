@@ -10,7 +10,7 @@ st.set_page_config(page_title="Evaluation Report", layout="wide")
 @st.cache_resource
 def get_db_connection():
     try:
-        return connector.connect(host="localhost", user="root", password="password", database="auth")
+        return connector.connect(host="localhost", user="root", password="sqladi@2710", database="auth")
     except connector.Error:
         st.error("Database connection failed. Please contact an administrator.")
         st.stop()
@@ -140,15 +140,14 @@ other_aspects_criteria = [
 # Fetch user's role and manager details
 cursor.execute("SELECT role, managed_by FROM users WHERE username=%s", (employee,))
 user_details = cursor.fetchone()
-print(user_details)
 user_role, managed_by = user_details if user_details else (None, None)
-print(user_role, managed_by)
 
 
 # --- Manager Ratings Section (Conditionally Displayed) ---
 st.markdown("<h2 style='text-align: center;'>Manager Ratings</h2>", unsafe_allow_html=True)
 
 if user_role == 'employee' and managed_by and managed_by != 'XYZ':
+    # Fetch ratings separately
     cursor.execute("""
         SELECT rater, role, criteria, score, timestamp
         FROM user_ratings
@@ -156,17 +155,24 @@ if user_role == 'employee' and managed_by and managed_by != 'XYZ':
         ORDER BY timestamp DESC
     """, (employee,))
     manager_ratings = cursor.fetchall()
-    print(manager_ratings)
-    print(employee)
-    
+
+    # Fetch remark separately
+    cursor.execute("""
+        SELECT remark FROM remarks
+        WHERE ratee = %s AND rating_type = 'manager'
+        LIMIT 1
+    """, (employee,))
+    manager_remark_result = cursor.fetchone()
+    manager_remark = manager_remark_result[0] if manager_remark_result else None
+
     if manager_ratings:
         ratings_by_criteria = {
             crit: (score, timestamp, rater, r_role)
             for rater, r_role, crit, score, timestamp in manager_ratings
         }
-        
+
         col1, col2 = st.columns(2)
-        
+
         # Display Development and Foundational in the first column
         with col1:
             st.markdown("### Development (70%)")
@@ -203,7 +209,7 @@ if user_role == 'employee' and managed_by and managed_by != 'XYZ':
                             <small>by <b>{rater}</b> on {timestamp.strftime('%Y-%m-%d')}</small>
                         </div>
                     """, unsafe_allow_html=True)
-            
+
             st.markdown("### Futuristic Progress")
             for crit in futuristic_criteria:
                 if crit in ratings_by_criteria:
@@ -214,8 +220,21 @@ if user_role == 'employee' and managed_by and managed_by != 'XYZ':
                             <small>by <b>{rater}</b> on {timestamp.strftime('%Y-%m-%d')}</small>
                         </div>
                     """, unsafe_allow_html=True)
+        
+        # Display the remark after the ratings
+        if manager_remark:
+            st.divider()
+            st.markdown("### Manager's Remark")
+            st.markdown(f"<div class='rating-card'>{manager_remark}</div>", unsafe_allow_html=True)
+
     else:
         st.info("No manager ratings have been submitted yet.")
+
+    # This handles the case where a remark exists but no ratings were submitted
+    if not manager_ratings and manager_remark:
+        st.markdown("### Manager's Remark")
+        st.markdown(f"<div class='rating-card'>{manager_remark}</div>", unsafe_allow_html=True)
+
 else:
     st.info("This user does not have a manager assigned.")
 
