@@ -32,7 +32,7 @@ def get_db_connection():
         db = connector.connect(
             host="localhost",
             user="root",
-            password="sqladi@2710",
+            password="password",
             database="auth"
         )
         return db
