@@ -225,14 +225,26 @@ with tab1:
                         # If they have no employees, it's safe to delete them
                         cursor.execute("DELETE FROM users WHERE username = %s", (username,))
                         db.commit()
-                        st.success(f"Manager '{username}' has been deleted successfully.")
+                        st.session_state['show_delete_dialog'] = True
+                        st.session_state['delete_message'] = f"Manager '{username}' has been deleted successfully."
                         st.rerun()
                 else:
                     # If the user is an employee, it's safe to delete them directly
                     cursor.execute("DELETE FROM users WHERE username = %s", (username,)) #
                     db.commit()
-                    st.success(f"Employee '{username}' has been deleted successfully.")
+                    st.session_state['show_delete_dialog'] = True
+                    st.session_state['delete_message'] = f"Employee '{username}' has been deleted successfully."
                     st.rerun()
+
+        # Show modal dialog if deletion was successful
+        if st.session_state.get("show_delete_dialog"):
+            @st.dialog("Confirmation")
+            def show_delete_dialog():
+                st.success(st.session_state.get("delete_message", "User deleted successfully!"))
+                if st.button("Close"):
+                    st.session_state["show_delete_dialog"] = False
+                    st.rerun()
+            show_delete_dialog()
 
     elif option == "Edit Employee/Manager":
         st.subheader("Edit Employee/Manager Details")

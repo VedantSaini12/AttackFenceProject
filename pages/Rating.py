@@ -140,7 +140,9 @@ other_aspects_criteria = [
 # Fetch user's role and manager details
 cursor.execute("SELECT role, managed_by FROM users WHERE username=%s", (employee,))
 user_details = cursor.fetchone()
+print(user_details)
 user_role, managed_by = user_details if user_details else (None, None)
+print(user_role, managed_by)
 
 
 # --- Manager Ratings Section (Conditionally Displayed) ---
@@ -154,6 +156,8 @@ if user_role == 'employee' and managed_by and managed_by != 'XYZ':
         ORDER BY timestamp DESC
     """, (employee,))
     manager_ratings = cursor.fetchall()
+    print(manager_ratings)
+    print(employee)
     
     if manager_ratings:
         ratings_by_criteria = {

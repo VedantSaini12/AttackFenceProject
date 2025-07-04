@@ -320,7 +320,7 @@ if employees:
     # --- PAGINATION CONTROLS BELOW THE EMPLOYEE LIST ---
     col_prev, col_page, col_next = st.columns([1, 2, 1])
     with col_prev:
-        if st.button("⬅️ Previous", disabled=st.session_state.emp_page == 0, key="emp_prev_btn"):
+        if st.button("⬅️ Previous", disabled=st.session_state.emp_page == 0, key="emp_prev_btn", use_container_width=True):
             st.session_state.emp_page = max(st.session_state.emp_page - 1, 0)
             st.rerun()
     with col_page:
@@ -329,7 +329,7 @@ if employees:
             unsafe_allow_html=True,
         )
     with col_next:
-        if st.button("Next ➡️", disabled=st.session_state.emp_page >= (total_pages - 1), key="emp_next_btn"):
+        if st.button("Next ➡️", disabled=st.session_state.emp_page >= (total_pages - 1), key="emp_next_btn", use_container_width=True):
             st.session_state.emp_page = min(st.session_state.emp_page + 1, total_pages - 1)
             st.rerun()
 else:
