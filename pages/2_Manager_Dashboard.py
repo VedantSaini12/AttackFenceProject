@@ -137,14 +137,39 @@ st.write("<br>", unsafe_allow_html=True)
 st.subheader("Evaluate Your Team Members")
 cursor.execute("SELECT username FROM users WHERE managed_by = %s", (name,))
 employees = cursor.fetchall()
+# --- PAGINATION CONTROLS FOR EMPLOYEE LIST ---
+EMPLOYEES_PER_PAGE = 3
+total_employees = len(employees)
+total_pages = (total_employees + EMPLOYEES_PER_PAGE - 1) // EMPLOYEES_PER_PAGE
+
+if "manager_emp_page" not in st.session_state:
+    st.session_state.manager_emp_page = 1
+
+def go_to_page(page):
+    st.session_state.manager_emp_page = page
+
 if employees:
-    # Your existing logic for the manager to rate employees.
-    # This includes the loop `for emp in employees:`, the expanders for each employee,
-    # the sliders, the remark box, and the submit button.
-    # All of this is copied directly from your original file's "manager" section.
-    # ...
-    # (The full team evaluation code from your file is assumed here)
-    # ...
+    # Pagination controls
+    col_prev, col_page, col_next = st.columns([1, 2, 1])
+    with col_prev:
+        if st.session_state.manager_emp_page > 1:
+            if st.button("⬅️ Prev", key="emp_prev"):
+                go_to_page(st.session_state.manager_emp_page - 1)
+    with col_page:
+        st.markdown(
+            f"<div style='text-align:center;'>Page <b>{st.session_state.manager_emp_page}</b> of <b>{total_pages}</b></div>",
+            unsafe_allow_html=True,
+        )
+    with col_next:
+        if st.session_state.manager_emp_page < total_pages:
+            if st.button("Next ➡️", key="emp_next"):
+                go_to_page(st.session_state.manager_emp_page + 1)
+
+    # Calculate which employees to show on this page
+    start_idx = (st.session_state.manager_emp_page - 1) * EMPLOYEES_PER_PAGE
+    end_idx = start_idx + EMPLOYEES_PER_PAGE
+    employees_page = employees[start_idx:end_idx]
+
     st.subheader("Your co-workers:")
     foundational_criteria = [
         ("Humility", 12.5),
@@ -177,7 +202,7 @@ if employees:
     # Create a set of just the CRITERIA NAMES (strings)
     all_criteria_names = {crit[0] for crit in (development_criteria + other_aspects_criteria + foundational_criteria + futuristic_criteria)}
 
-    for emp in employees:
+    for emp in employees_page:
         employee_name = emp[0]
         
         cursor.execute("""
