@@ -427,12 +427,39 @@ with tab2:
     else:
         filtered_users = all_users
 
-    for user_data in filtered_users:
+    # --- PAGINATION LOGIC ---
+    USERS_PER_PAGE = 6
+    total_users = len(filtered_users)
+    total_pages = (total_users + USERS_PER_PAGE - 1) // USERS_PER_PAGE if total_users > 0 else 1
+
+    if "admin_user_page" not in st.session_state:
+        st.session_state.admin_user_page = 1
+    page_number = st.session_state.admin_user_page
+
+    start_idx = (page_number - 1) * USERS_PER_PAGE
+    end_idx = start_idx + USERS_PER_PAGE
+    paginated_users = filtered_users[start_idx:end_idx]
+
+    for user_data in paginated_users:
         emp_email, emp_name, emp_role, emp_manager = user_data
         with st.expander(f"**{emp_name}** ({emp_role.title()}) - Managed by: {emp_manager}"):
             if st.button("View Full Evaluation Report", key=f"view_{emp_email}"):
                 st.session_state['selected_employee'] = emp_name
                 st.switch_page("pages/Rating.py")
+
+    st.write("---")
+    # Display pagination controls at the bottom
+    col1, col2, col3 = st.columns([2, 5, 2])
+    with col1:
+        if st.button("⬅️ Previous", disabled=(page_number <= 1), use_container_width=True):
+            st.session_state.admin_user_page -= 1
+            st.rerun()
+    with col2:
+        st.markdown(f"<p style='text-align: center; font-weight: bold;'>Page {page_number} of {total_pages}</p>", unsafe_allow_html=True)
+    with col3:
+        if st.button("Next ➡️", disabled=(page_number >= total_pages), use_container_width=True):
+            st.session_state.admin_user_page += 1
+            st.rerun()
 
 # --- LOGOUT BUTTON ---
 st.write("---")

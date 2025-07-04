@@ -138,6 +138,20 @@ st.subheader("Evaluate Your Team Members")
 cursor.execute("SELECT username FROM users WHERE managed_by = %s", (name,))
 employees = cursor.fetchall()
 if employees:
+    # --- PAGINATION LOGIC ---
+    EMPLOYEES_PER_PAGE = 3
+    total_pages = (len(employees) + EMPLOYEES_PER_PAGE - 1) // EMPLOYEES_PER_PAGE
+
+    if "manager_emp_page" not in st.session_state:
+        st.session_state.manager_emp_page = 1
+
+    page_num = st.session_state.manager_emp_page
+    start_idx = (page_num - 1) * EMPLOYEES_PER_PAGE
+    end_idx = start_idx + EMPLOYEES_PER_PAGE
+    employees_page = employees[start_idx:end_idx]
+
+    # --- END OF PAGINATION LOGIC ---
+
     # Your existing logic for the manager to rate employees.
     # This includes the loop `for emp in employees:`, the expanders for each employee,
     # the sliders, the remark box, and the submit button.
@@ -177,7 +191,7 @@ if employees:
     # Create a set of just the CRITERIA NAMES (strings)
     all_criteria_names = {crit[0] for crit in (development_criteria + other_aspects_criteria + foundational_criteria + futuristic_criteria)}
 
-    for emp in employees:
+    for emp in employees_page:
         employee_name = emp[0]
         
         cursor.execute("""
@@ -305,6 +319,16 @@ if employees:
                         )
                         st.success(f"Rating for {employee_name} submitted successfully!")
                         st.rerun()
+                        
+    col_prev, col_page, col_next = st.columns([1, 2, 1])
+    if col_prev.button("⬅️ Prev", key="emp_prev", disabled=(page_num <= 1)):
+        st.session_state.manager_emp_page -= 1
+        st.rerun()
+    col_page.markdown(f"<div style='text-align:center;'>Page <b>{page_num}</b> of <b>{total_pages}</b></div>", unsafe_allow_html=True)
+    if col_next.button("Next ➡️", key="emp_next", disabled=(page_num >= total_pages)):
+        st.session_state.manager_emp_page += 1
+        st.rerun()
+    st.write("---")
 else:
     st.info("You do not currently manage any employees.")
 

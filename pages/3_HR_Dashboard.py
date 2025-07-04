@@ -277,10 +277,26 @@ else:
                     st.success(f"Updated details for {emp_name}")
                     st.rerun()
 
-# CHECKLIST-CODE-STARTS-HERE
-# --- EVALUATION STATUS CHECKLIST ---
-st.markdown("---")
+    # --- Pagination Controls for Edit Section ---
+    st.write("---")
+    col1, col2, col3 = st.columns([2, 3, 2])
+    
+    with col1:
+        if st.button("⬅️ Previous", disabled=(current_page_edit <= 1), use_container_width=True, key="edit_prev_btn"):
+            st.session_state.employee_edit_page -= 1
+            st.rerun()
+            
+    with col2:
+        st.markdown(f"<p style='text-align: center; font-weight: bold;'>Page {current_page_edit} of {total_pages_edit}</p>", unsafe_allow_html=True)
 
+    with col3:
+        if st.button("Next ➡️", disabled=(current_page_edit >= total_pages_edit), use_container_width=True, key="edit_next_btn"):
+            st.session_state.employee_edit_page += 1
+            st.rerun()
+
+# CHECKLIST-CODE-STARTS-HERE
+st.markdown("---")
+# --- EVALUATION STATUS CHECKLIST ---
 st.markdown("## 📊 Evaluation Status Dashboard")
 
 # Custom CSS for the checklist
