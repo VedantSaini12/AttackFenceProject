@@ -137,38 +137,24 @@ st.write("<br>", unsafe_allow_html=True)
 st.subheader("Evaluate Your Team Members")
 cursor.execute("SELECT username FROM users WHERE managed_by = %s", (name,))
 employees = cursor.fetchall()
-# --- PAGINATION CONTROLS FOR EMPLOYEE LIST ---
-EMPLOYEES_PER_PAGE = 3
-total_employees = len(employees)
-total_pages = (total_employees + EMPLOYEES_PER_PAGE - 1) // EMPLOYEES_PER_PAGE
-
-if "manager_emp_page" not in st.session_state:
-    st.session_state.manager_emp_page = 1
-
-def go_to_page(page):
-    st.session_state.manager_emp_page = page
+# --- PAGINATION LOGIC FOR EMPLOYEE LIST ---
+EMPLOYEES_PER_PAGE = 4  # Adjust as needed
 
 if employees:
-    # Pagination controls
-    col_prev, col_page, col_next = st.columns([1, 2, 1])
-    with col_prev:
-        if st.session_state.manager_emp_page > 1:
-            if st.button("⬅️ Prev", key="emp_prev"):
-                go_to_page(st.session_state.manager_emp_page - 1)
-    with col_page:
-        st.markdown(
-            f"<div style='text-align:center;'>Page <b>{st.session_state.manager_emp_page}</b> of <b>{total_pages}</b></div>",
-            unsafe_allow_html=True,
-        )
-    with col_next:
-        if st.session_state.manager_emp_page < total_pages:
-            if st.button("Next ➡️", key="emp_next"):
-                go_to_page(st.session_state.manager_emp_page + 1)
+    total_employees = len(employees)
+    total_pages = max((total_employees - 1) // EMPLOYEES_PER_PAGE + 1, 1)
 
-    # Calculate which employees to show on this page
-    start_idx = (st.session_state.manager_emp_page - 1) * EMPLOYEES_PER_PAGE
-    end_idx = start_idx + EMPLOYEES_PER_PAGE
-    employees_page = employees[start_idx:end_idx]
+    # Use session state to remember the current page
+    if "emp_page" not in st.session_state:
+        st.session_state.emp_page = 0
+
+    # Clamp the current page to valid range
+    max_page = total_pages - 1
+    st.session_state.emp_page = min(max(st.session_state.emp_page, 0), max_page)
+
+    start_idx = st.session_state.emp_page * EMPLOYEES_PER_PAGE
+    end_idx = min(start_idx + EMPLOYEES_PER_PAGE, total_employees)
+    paginated_employees = employees[start_idx:end_idx]
 
     st.subheader("Your co-workers:")
     foundational_criteria = [
@@ -202,16 +188,16 @@ if employees:
     # Create a set of just the CRITERIA NAMES (strings)
     all_criteria_names = {crit[0] for crit in (development_criteria + other_aspects_criteria + foundational_criteria + futuristic_criteria)}
 
-    for emp in employees_page:
+    for emp in paginated_employees:
         employee_name = emp[0]
-        
+
         cursor.execute("""
             SELECT criteria FROM user_ratings 
             WHERE rater = %s AND rating_type = 'self'
         """, (employee_name,))
         employee_submitted_criteria = {row[0] for row in cursor.fetchall()}
         is_self_evaluation_complete = all_criteria_names.issubset(employee_submitted_criteria)
-        
+
         with st.expander(f"Evaluate: **{employee_name}**"):
 
             if not is_self_evaluation_complete:
@@ -268,7 +254,7 @@ if employees:
                     feedback = cursor.fetchone()
                     st.subheader("Your Remark:")
                     st.success(feedback[0] if feedback else "No remark was provided.")
-                
+
                 else:
                     cursor.execute("SELECT criteria, score FROM user_ratings WHERE rater = %s AND rating_type = 'self'", (employee_name,))
                     employee_self_ratings = dict(cursor.fetchall())
@@ -324,12 +310,28 @@ if employees:
                         db.commit()
                         add_notification(
                             recipient=employee_name,
-                            sender=name, # 'name' is the manager's name from session_state
+                            sender=name,  # 'name' is the manager's name from session_state
                             message=f"Your manager, {name}, has completed your evaluation.",
                             notification_type='evaluation_completed'
                         )
                         st.success(f"Rating for {employee_name} submitted successfully!")
                         st.rerun()
+
+    # --- PAGINATION CONTROLS BELOW THE EMPLOYEE LIST ---
+    col_prev, col_page, col_next = st.columns([1, 2, 1])
+    with col_prev:
+        if st.button("⬅️ Previous", disabled=st.session_state.emp_page == 0, key="emp_prev_btn"):
+            st.session_state.emp_page = max(st.session_state.emp_page - 1, 0)
+            st.rerun()
+    with col_page:
+        st.markdown(
+            f"<div style='text-align:center; font-weight:bold;'>Page {st.session_state.emp_page + 1} of {total_pages}</div>",
+            unsafe_allow_html=True,
+        )
+    with col_next:
+        if st.button("Next ➡️", disabled=st.session_state.emp_page >= (total_pages - 1), key="emp_next_btn"):
+            st.session_state.emp_page = min(st.session_state.emp_page + 1, total_pages - 1)
+            st.rerun()
 else:
     st.info("You do not currently manage any employees.")
 

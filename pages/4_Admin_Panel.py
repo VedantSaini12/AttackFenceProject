@@ -374,12 +374,12 @@ with tab2:
     cursor.execute("SELECT email, username, role, managed_by FROM users WHERE role != 'admin'")
     all_users = cursor.fetchall()
     
-    search_query = st.text_input("🔍 Search Any User by Name or Email", key="admin_search")
+    search_query = st.text_input("🔍 Search Any User by Name", key="admin_search")
     
     if search_query:
         filtered_users = [
             u for u in all_users 
-            if search_query.lower() in u[1].lower() or search_query.lower() in u[0].lower()
+            if search_query.lower() in u[1].lower()
         ]
     else:
         filtered_users = all_users
