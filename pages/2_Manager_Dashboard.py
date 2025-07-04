@@ -12,7 +12,7 @@ st.set_page_config(page_title="Manager Dashboard", page_icon="👔", layout="wid
 @st.cache_resource
 def get_db_connection():
     try:
-        return connector.connect(host="localhost", user="root", password="password", database="auth")
+        return connector.connect(host="localhost", user="root", password="sqladi@2710", database="auth")
     except connector.Error:
         st.error("Database connection failed. Please contact an administrator.")
         st.stop()
@@ -119,7 +119,7 @@ cursor = db.cursor()
 
 # --- MAIN DATABASE CONNECTION FOR THE PAGE ---
 try:
-    db = connector.connect(host="localhost", user="root", password="password", database="auth")
+    db = connector.connect(host="localhost", user="root", password="sqladi@2710", database="auth")
     cursor = db.cursor()
 except connector.Error as e:
     st.error(f"Database connection failed: {e}")
@@ -137,25 +137,28 @@ st.write("<br>", unsafe_allow_html=True)
 st.subheader("Evaluate Your Team Members")
 cursor.execute("SELECT username FROM users WHERE managed_by = %s", (name,))
 employees = cursor.fetchall()
-# --- PAGINATION LOGIC FOR EMPLOYEE LIST ---
-EMPLOYEES_PER_PAGE = 4  # Adjust as needed
-
 if employees:
-    total_employees = len(employees)
-    total_pages = max((total_employees - 1) // EMPLOYEES_PER_PAGE + 1, 1)
+    # --- PAGINATION LOGIC ---
+    EMPLOYEES_PER_PAGE = 3
+    total_pages = (len(employees) + EMPLOYEES_PER_PAGE - 1) // EMPLOYEES_PER_PAGE
 
-    # Use session state to remember the current page
-    if "emp_page" not in st.session_state:
-        st.session_state.emp_page = 0
+    if "manager_emp_page" not in st.session_state:
+        st.session_state.manager_emp_page = 1
 
-    # Clamp the current page to valid range
-    max_page = total_pages - 1
-    st.session_state.emp_page = min(max(st.session_state.emp_page, 0), max_page)
+    page_num = st.session_state.manager_emp_page
+    start_idx = (page_num - 1) * EMPLOYEES_PER_PAGE
+    end_idx = start_idx + EMPLOYEES_PER_PAGE
+    employees_page = employees[start_idx:end_idx]
 
-    start_idx = st.session_state.emp_page * EMPLOYEES_PER_PAGE
-    end_idx = min(start_idx + EMPLOYEES_PER_PAGE, total_employees)
-    paginated_employees = employees[start_idx:end_idx]
+    # --- END OF PAGINATION LOGIC ---
 
+    # Your existing logic for the manager to rate employees.
+    # This includes the loop `for emp in employees:`, the expanders for each employee,
+    # the sliders, the remark box, and the submit button.
+    # All of this is copied directly from your original file's "manager" section.
+    # ...
+    # (The full team evaluation code from your file is assumed here)
+    # ...
     st.subheader("Your co-workers:")
     foundational_criteria = [
         ("Humility", 12.5),
@@ -188,16 +191,16 @@ if employees:
     # Create a set of just the CRITERIA NAMES (strings)
     all_criteria_names = {crit[0] for crit in (development_criteria + other_aspects_criteria + foundational_criteria + futuristic_criteria)}
 
-    for emp in paginated_employees:
+    for emp in employees_page:
         employee_name = emp[0]
-
+        
         cursor.execute("""
             SELECT criteria FROM user_ratings 
             WHERE rater = %s AND rating_type = 'self'
         """, (employee_name,))
         employee_submitted_criteria = {row[0] for row in cursor.fetchall()}
         is_self_evaluation_complete = all_criteria_names.issubset(employee_submitted_criteria)
-
+        
         with st.expander(f"Evaluate: **{employee_name}**"):
 
             if not is_self_evaluation_complete:
@@ -254,7 +257,7 @@ if employees:
                     feedback = cursor.fetchone()
                     st.subheader("Your Remark:")
                     st.success(feedback[0] if feedback else "No remark was provided.")
-
+                
                 else:
                     cursor.execute("SELECT criteria, score FROM user_ratings WHERE rater = %s AND rating_type = 'self'", (employee_name,))
                     employee_self_ratings = dict(cursor.fetchall())
@@ -310,28 +313,22 @@ if employees:
                         db.commit()
                         add_notification(
                             recipient=employee_name,
-                            sender=name,  # 'name' is the manager's name from session_state
+                            sender=name, # 'name' is the manager's name from session_state
                             message=f"Your manager, {name}, has completed your evaluation.",
                             notification_type='evaluation_completed'
                         )
                         st.success(f"Rating for {employee_name} submitted successfully!")
                         st.rerun()
-
-    # --- PAGINATION CONTROLS BELOW THE EMPLOYEE LIST ---
+                        
     col_prev, col_page, col_next = st.columns([1, 2, 1])
-    with col_prev:
-        if st.button("⬅️ Previous", disabled=st.session_state.emp_page == 0, key="emp_prev_btn", use_container_width=True):
-            st.session_state.emp_page = max(st.session_state.emp_page - 1, 0)
-            st.rerun()
-    with col_page:
-        st.markdown(
-            f"<div style='text-align:center; font-weight:bold;'>Page {st.session_state.emp_page + 1} of {total_pages}</div>",
-            unsafe_allow_html=True,
-        )
-    with col_next:
-        if st.button("Next ➡️", disabled=st.session_state.emp_page >= (total_pages - 1), key="emp_next_btn", use_container_width=True):
-            st.session_state.emp_page = min(st.session_state.emp_page + 1, total_pages - 1)
-            st.rerun()
+    if col_prev.button("⬅️ Prev", key="emp_prev", disabled=(page_num <= 1)):
+        st.session_state.manager_emp_page -= 1
+        st.rerun()
+    col_page.markdown(f"<div style='text-align:center;'>Page <b>{page_num}</b> of <b>{total_pages}</b></div>", unsafe_allow_html=True)
+    if col_next.button("Next ➡️", key="emp_next", disabled=(page_num >= total_pages)):
+        st.session_state.manager_emp_page += 1
+        st.rerun()
+    st.write("---")
 else:
     st.info("You do not currently manage any employees.")
 
