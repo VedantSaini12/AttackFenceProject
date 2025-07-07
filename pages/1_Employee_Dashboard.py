@@ -11,7 +11,7 @@ st.set_page_config(page_title="Employee Dashboard", page_icon="👤", layout="wi
 @st.cache_resource
 def get_db_connection():
     try:
-        return connector.connect(host="localhost", user="root", password="password", database="auth")
+        return connector.connect(host="localhost", user="root", password="sqladi@2710", database="auth")
     except connector.Error:
         st.error("Database connection failed. Please contact an administrator.")
         st.stop()
@@ -71,7 +71,7 @@ role = st.session_state["role"]
 
 # --- MAIN DATABASE CONNECTION FOR THE PAGE ---
 try:
-    db = connector.connect(host="localhost", user="root", password="password", database="auth")
+    db = connector.connect(host="localhost", user="root", password="sqladi@2710", database="auth")
     cursor = db.cursor()
 except connector.Error as e:
     st.error(f"Database connection failed: {e}")

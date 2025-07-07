@@ -14,7 +14,7 @@ st.set_page_config(page_title="HR Dashboard", page_icon="📋", layout="wide")
 @st.cache_resource
 def get_db_connection():
     try:
-        return connector.connect(host="localhost", user="root", password="password", database="auth")
+        return connector.connect(host="localhost", user="root", password="sqladi@2710", database="auth")
     except connector.Error:
         st.error("Database connection failed. Please contact an administrator.")
         st.stop()
@@ -26,7 +26,7 @@ def get_token_store():
 db = get_db_connection()
 token_store = get_token_store()
 
-# --- START OF NEW, SECURE AUTHENTICATION GUARD ---
+# --- AUTHENTICATION GUARD ---
 def authenticate_user():
     """
     Checks session state and URL token to authenticate the user.
@@ -294,185 +294,42 @@ else:
             st.session_state.employee_edit_page += 1
             st.rerun()
 
-# CHECKLIST-CODE-STARTS-HERE
+# --- NEW: VIEW ALL EVALUATIONS FOR HR ---
 st.markdown("---")
-# --- EVALUATION STATUS CHECKLIST ---
-st.markdown("## 📊 Evaluation Status Dashboard")
+st.subheader("All Employee & Manager Evaluations")
+st.info("As an HR, you can view all evaluation data. Use the search below to find a user.")
 
-# Custom CSS for the checklist
-st.markdown("""
-<style>
-.checklist-container {
-    background: transparent;
-    padding: 0px;
-    border-radius: 0px;
-    margin: 0px;
-    box-shadow: none;
-}
+cursor.execute("SELECT email, username, role, managed_by FROM users WHERE role != 'admin'")
+all_users = cursor.fetchall()
 
-.manager-section {
-    background: rgba(255, 255, 255, 0.1);
-    backdrop-filter: blur(10px);
-    border: 1px solid rgba(255, 255, 255, 0.18);
-    border-radius: 10px;
-    padding: 1px;
-    margin: 0px 0;
-}
+search_query = st.text_input("🔍 Search Any User by Name or Email", key="hr_search")
+filtered = [u for u in all_users if search_query.lower() in u[1].lower() or search_query.lower() in u[0].lower()] if search_query else all_users
 
-.employee-section {
-    background: rgba(255, 255, 255, 0.05);
-    backdrop-filter: blur(5px);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 8px;
-    padding: 1px;
-    margin: 8px 0;
-    margin-left: 20px;
-}
+# Pagination
+USERS_PER_PAGE = 6
+total = len(filtered)
+total_pages = (total + USERS_PER_PAGE - 1) // USERS_PER_PAGE
+page = st.session_state.get('hr_user_page', 1)
+start = (page-1)*USERS_PER_PAGE
+end = start + USERS_PER_PAGE
+for u in filtered[start:end]:
+    email, uname, urole, umgr = u
+    with st.expander(f"**{uname}** ({urole.title()}) - Managed by: {umgr}"):
+        if st.button("View Full Evaluation Report", key=f"hr_view_{email}"):
+            st.session_state['selected_employee'] = uname
+            st.switch_page("pages/Rating.py")
 
-.status-complete {
-    color: #4CAF50;
-    font-weight: bold;
-}
-
-.status-pending {
-    color: #FF9800;
-    font-weight: bold;
-}
-
-.status-not-started {
-    color: #F44336;
-    font-weight: bold;
-}
-
-.manager-title {
-    color: #2E3440;
-    font-size: 18px;
-    font-weight: bold;
-    margin-bottom: 10px;
-}
-
-.employee-name {
-    color: #2E3440;
-    font-size: 16px;
-    font-weight: 500;
-}
-</style>
-""", unsafe_allow_html=True)
-
-
-# Fetch all managers and their employees
-cursor.execute("""
-    SELECT DISTINCT managed_by 
-    FROM users 
-    WHERE managed_by IS NOT NULL AND managed_by != 'XYZ'
-    ORDER BY managed_by
-""")
-managers = [row[0] for row in cursor.fetchall()]
-
-st.markdown('<div class="checklist-container">', unsafe_allow_html=True)
-
-for manager in managers:
-    # Get manager's self-evaluation status (where rater = ratee)
-    cursor.execute("""
-        SELECT COUNT(DISTINCT criteria) 
-        FROM user_ratings 
-        WHERE rater = %s AND ratee = %s AND rating_type = 'self'
-    """, (manager, manager))
-    manager_self_eval_count = cursor.fetchone()[0]
-    manager_self_eval = manager_self_eval_count > 0
-
-    # Manager section
-    st.markdown('<div class="manager-section">', unsafe_allow_html=True)
-
-    manager_status = "✅ Complete" if manager_self_eval else "⏳ Pending"
-    status_class = "status-complete" if manager_self_eval else "status-pending"
-
-    st.markdown(f"""
-    <div class="manager-title">
-        👔 Manager: {manager}
-    <div class="{status_class}">
-        Self-Evaluation: {manager_status}
-    </div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    # Get employees under this manager
-    cursor.execute("""
-        SELECT username 
-        FROM users 
-        WHERE managed_by = %s AND role = 'employee'
-        ORDER BY username
-    """, (manager,))
-    employees = [row[0] for row in cursor.fetchall()]
-
-    if employees:
-        with st.expander(f"📋 Employees under {manager}"):
-            for employee in employees:
-                # Check employee's self-evaluation status
-                cursor.execute("""
-                    SELECT COUNT(DISTINCT criteria) 
-                    FROM user_ratings 
-                    WHERE rater = %s AND ratee = %s AND rating_type = 'self'
-                """, (employee, employee))
-                emp_self_eval_count = cursor.fetchone()[0]
-                emp_self_eval = emp_self_eval_count > 0
-
-                # Check if ANY manager has evaluated this employee
-                cursor.execute("""
-                    SELECT COUNT(DISTINCT criteria) 
-                    FROM user_ratings 
-                    WHERE ratee = %s AND rating_type = 'manager'
-                """, (employee,))
-                manager_eval_ratings = cursor.fetchone()[0]
-
-                cursor.execute("""
-                    SELECT COUNT(*) 
-                    FROM remarks 
-                    WHERE ratee = %s AND rating_type = 'manager'
-                """, (employee,))
-                manager_eval_remarks = cursor.fetchone()[0]
-
-                # Get the actual manager who evaluated (for display)
-                cursor.execute("""
-                    SELECT rater 
-                    FROM remarks 
-                    WHERE ratee = %s AND rating_type = 'manager' 
-                    LIMIT 1
-                """, (employee,))
-                actual_evaluator = cursor.fetchone()
-                evaluator_name = actual_evaluator[0] if actual_evaluator else manager
-
-                manager_eval = (manager_eval_ratings > 0) or (manager_eval_remarks > 0)
-
-                # Determine overall status
-                if emp_self_eval and manager_eval:
-                    overall_status = "✅ Fully Complete"
-                    status_class = "status-complete"
-                    eval_text = f"Have been evaluated by manager {evaluator_name} too."
-                elif emp_self_eval and not manager_eval:
-                    overall_status = "🔄 Self-Evaluation Done, Manager Pending"
-                    status_class = "status-pending"
-                    eval_text = f"Awaiting evaluation from manager {manager}."
-                elif not emp_self_eval and manager_eval:
-                    overall_status = "🔄 Manager Done, Self-Evaluation Pending"
-                    status_class = "status-pending"
-                    eval_text = f"Have been evaluated by manager {evaluator_name}, but self-evaluation pending."
-                else:
-                    overall_status = "❌ Not Started"
-                    status_class = "status-not-started"
-                    eval_text = f"No evaluations completed yet. Manager: {manager}"
-
-                st.markdown(f"""
-                <div class="employee-section">
-                    <div class="employee-name">👤 {employee}</div>
-                    <div class="{status_class}">{overall_status}</div>
-                    <div style="color: #B0BEC5; font-size: 14px; margin-top: 5px;">
-                        {eval_text}
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
-
-    st.markdown('</div>', unsafe_allow_html=True)
+col1, col2, col3 = st.columns([2,5,2])
+with col1:
+    if st.button("⬅️ Previous", disabled=(page<=1)):
+        st.session_state['hr_user_page'] = page-1
+        st.rerun()
+with col2:
+    st.markdown(f"<p style='text-align:center;'>Page {page} of {total_pages}</p>", unsafe_allow_html=True)
+with col3:
+    if st.button("Next ➡️", disabled=(page>=total_pages)):
+        st.session_state['hr_user_page'] = page+1
+        st.rerun()
 
 
 # --- LOGOUT BUTTON ---
