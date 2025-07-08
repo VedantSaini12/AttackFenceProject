@@ -206,26 +206,39 @@ with st.expander("Open Self-Evaluation Form", expanded=False):
         ("Special Situation", 10),
     ]
 
+    # Get current quarter
+    now = datetime.datetime.now()
+    current_quarter = (now.month - 1) // 3 + 1
+
+    # Only consider self_ratings from the current quarter
+    cursor.execute("""
+        SELECT criteria, score, timestamp, quarter FROM user_ratings
+        WHERE rater = %s AND ratee = %s AND rating_type = 'self'
+        ORDER BY timestamp DESC
+    """, (name, name))
+    self_ratings_all = cursor.fetchall()
+    self_ratings = [(crit, score, timestamp) for crit, score, timestamp, quarter in self_ratings_all if quarter == current_quarter]
+
     all_criteria = [crit for crit, _ in development_criteria + other_aspects_criteria + foundational_criteria + futuristic_criteria]
     submitted_criteria = set([crit for crit, _, _ in self_ratings])
-    
+
     if set(all_criteria).issubset(submitted_criteria):
-        st.info("You have already submitted your self-rating.")
-        
+        st.info("You have already submitted your self-rating for this quarter.")
+
         # Create columns for the summary view
         col1, col2 = st.columns(2)
-        
+
         with col1:
             st.markdown("### Development (70%)")
             for crit, _ in development_criteria:
                 score, timestamp = next((s, t) for c, s, t in self_ratings if c == crit)
                 st.markdown(f"**{crit}**: {score}/10  <small>(on {timestamp.strftime('%Y-%m-%d')})</small>", unsafe_allow_html=True)
-            
+
             st.markdown("### Foundational Progress")
             for crit, _ in foundational_criteria:
                 score, timestamp = next((s, t) for c, s, t in self_ratings if c == crit)
                 st.markdown(f"**{crit}**: {score}/10  <small>(on {timestamp.strftime('%Y-%m-%d')})</small>", unsafe_allow_html=True)
-        
+
         with col2:
             st.markdown("### Other Aspects (30%)")
             for crit, _ in other_aspects_criteria:
@@ -271,13 +284,13 @@ with st.expander("Open Self-Evaluation Form", expanded=False):
             # Check for already submitted criteria one last time to prevent duplicates
             cursor.execute("SELECT criteria FROM user_ratings WHERE rater = %s AND rating_type = 'self'", (name,))
             already_submitted = {row[0] for row in cursor.fetchall()}
-            
+            quarter = datetime.datetime.now().month // 3 + 1 if datetime.datetime.now().month % 3 != 0 else datetime.datetime.now().month // 3
             # Insert all new scores in a single loop
             for crit, score in all_scores.items():
                 if crit not in already_submitted:
                     cursor.execute(
-                        "INSERT INTO user_ratings (rater, ratee, role, criteria, score, rating_type) VALUES (%s, %s, %s, %s, %s, %s)",
-                        (name, name, role, crit, score, "self")
+                        "INSERT INTO user_ratings (rater, ratee, role, criteria, score, rating_type, quarter) VALUES (%s, %s, %s, %s, %s, %s,%s)",
+                        (name, name, role, crit, score, "self",quarter)
                     )
             db.commit()
             # --- ADD THIS NOTIFICATION LOGIC ---
