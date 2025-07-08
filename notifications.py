@@ -12,7 +12,7 @@ def get_notification_db_connection():
             st.session_state.db_connection = connector.connect(
                 host="localhost",
                 user="root", 
-                password="password",
+                password="sqladi@2710",
                 database="auth"
             )
         except connector.Error:

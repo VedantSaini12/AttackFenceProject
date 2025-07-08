@@ -4,7 +4,7 @@ import bcrypt
 import datetime
 import uuid
 from notifications import notification_bell_component, add_notification
-from validators import validate_password, validate_email
+from validators import validate_password, validate_email, ALLOWED_DOMAINS
 from utils import generate_random_password
 
 # --- PAGE CONFIGURATION ---
@@ -14,7 +14,7 @@ st.set_page_config(page_title="HR Dashboard", page_icon="📋", layout="wide")
 @st.cache_resource
 def get_db_connection():
     try:
-        return connector.connect(host="localhost", user="root", password="password", database="auth")
+        return connector.connect(host="localhost", user="root", password="sqladi@2710", database="auth")
     except connector.Error:
         st.error("Database connection failed. Please contact an administrator.")
         st.stop()
@@ -26,7 +26,7 @@ def get_token_store():
 db = get_db_connection()
 token_store = get_token_store()
 
-# --- START OF NEW, SECURE AUTHENTICATION GUARD ---
+# --- AUTHENTICATION GUARD ---
 def authenticate_user():
     """
     Checks session state and URL token to authenticate the user.
@@ -86,83 +86,128 @@ st.write(f"<center><h2>Welcome {name}!</h2></center>", unsafe_allow_html=True)
 # Add New Employee Form
 st.subheader("Add New Employee")
 
-# --- PASSWORD GENERATION LOGIC (This part is correct and stays the same) ---
-if 'hr_add_pwd' not in st.session_state:
-    st.session_state.hr_add_pwd = ''
+# Display any message that was stored in the session state from the previous run
+if 'form_message' in st.session_state:
+    msg_type, msg_text = st.session_state.form_message
+    if msg_type == "success":
+        st.success(msg_text)
+    # This also allows you to show errors in the same way, e.g., else: st.error(msg_text)
+    # Clear the message so it doesn't appear again
+    del st.session_state.form_message
+
+# On the rerun after a success, this block will run first
+if st.session_state.get('form_submitted_successfully', False):
+    # Clear the form input states from the previous run
+    st.session_state.add_email_local = ''
+    st.session_state.add_emp_name = ''
+    st.session_state.add_emp_password = ''
+    # Reset the flag so this doesn't run again
+    st.session_state.form_submitted_successfully = False
 
 if st.button("✨ Generate Secure Password", key="hr_add_pwd_gen"):
-    st.session_state.hr_add_pwd = generate_random_password()
+    st.session_state.add_emp_password = generate_random_password()
     st.rerun()
 
-# --- THE FORM (with placeholders for errors) ---
-with st.form("add_employee_form", clear_on_submit=False): # Set clear_on_submit to False
-    new_emp_username = st.text_input("Email", placeholder="Enter user's email")
-    email_error_placeholder = st.empty()  # 1. Placeholder for email errors
+# Placeholders for error messages
+email_error_ph = st.empty()
+password_error_ph = st.empty()
+form_error_ph = st.empty()
 
-    new_emp_name = st.text_input("First Name", placeholder="Enter user's first name").title()
+with st.form("add_employee_form", clear_on_submit=False):
+    col1, col2 = st.columns([3, 3])
+    with col1:
+        email_local = st.text_input("Email Username", placeholder="Enter email username", key="add_email_local")
+    with col2:
+        st.markdown("<br>", unsafe_allow_html=True) # Spacer for alignment
+        st.selectbox("Domain", options=ALLOWED_DOMAINS, key="add_email_domain", label_visibility="collapsed")
 
-    new_emp_password = st.text_input("Password", type="password", key="hr_add_pwd", placeholder="Enter or generate a password")
-    password_error_placeholder = st.empty() # 2. Placeholder for password errors
+    first_name = st.text_input("First Name", placeholder="Enter user's first name", key="add_emp_name")
+    password = st.text_input("Password", type="password", key="add_emp_password", placeholder="Enter or generate a password")
 
     cursor.execute("SELECT username FROM users WHERE role = 'manager'")
     managers = [row[0] for row in cursor.fetchall()]
-    selected_manager = st.selectbox("Assign Manager", managers) if managers else None
-
-    # General error placeholder at the bottom of the form
-    form_error_placeholder = st.empty()
+    manager = st.selectbox("Assign Manager", managers, key="add_emp_manager")
 
     submitted = st.form_submit_button("Add Employee")
 
-    if submitted:
-        # Perform all validations
-        is_email_valid = validate_email(new_emp_username)
-        password_errors = validate_password(new_emp_password)
-        all_fields_filled = new_emp_username and new_emp_password and new_emp_name and selected_manager
+# Handle form submission
+if submitted:
+    # Clear previous errors
+    email_error_ph.empty()
+    password_error_ph.empty()
+    form_error_ph.empty()
 
-        # 3. Write errors to the correct placeholder
-        if not all_fields_filled:
-            form_error_placeholder.error("Please fill all fields and select a manager.")
-        elif not is_email_valid:
-            email_error_placeholder.error("Please enter a valid email address.")
-        elif password_errors:
-            # Join all password validation messages into one
-            password_error_placeholder.error(" & ".join(password_errors))
+    full_email = f"{st.session_state.add_email_local}@{st.session_state.add_email_domain}" if st.session_state.add_email_local else ''
+    is_email_valid = validate_email(full_email)
+    password_errors = validate_password(st.session_state.add_emp_password)
+    all_fields = st.session_state.add_email_local and st.session_state.add_emp_name and st.session_state.add_emp_password and st.session_state.add_emp_manager
+
+    if not all_fields:
+        form_error_ph.error("Please fill all fields and select a manager.")
+    elif not is_email_valid:
+        email_error_ph.error(f"Email must be in the format username@domain. Enter username only.")
+    elif password_errors:
+        password_error_ph.error(" & ".join(password_errors))
+    else:
+        cursor.execute("SELECT email FROM users WHERE email = %s", (full_email,))
+        if cursor.fetchone():
+            email_error_ph.error("An account with this email already exists.")
         else:
-            # Check if email already exists
-            cursor.execute("SELECT email FROM users WHERE email = %s", (new_emp_username,))
-            if cursor.fetchone():
-                email_error_placeholder.error("An account with this email already exists.")
-            else:
-                # If all checks pass, create the user
-                hashed_pw = bcrypt.hashpw(new_emp_password.encode(), bcrypt.gensalt())
-                cursor.execute(
-                    "INSERT INTO users (email, password, role, managed_by, username) VALUES (%s, %s, %s, %s, %s)",
-                    (new_emp_username, hashed_pw, "employee", selected_manager, new_emp_name)
-                )
-                db.commit()
-                st.success(f"Successfully created new user: {new_emp_name}")
+            hashed_pw = bcrypt.hashpw(st.session_state.add_emp_password.encode(), bcrypt.gensalt())
+            cursor.execute(
+                "INSERT INTO users (email, password, role, managed_by, username) VALUES (%s, %s, %s, %s, %s)",
+                (full_email, hashed_pw, "employee", st.session_state.add_emp_manager, st.session_state.add_emp_name)
+            )
+            db.commit()
 
-                # Clear the password from session state after success
-                st.session_state.hr_add_pwd = ''
-
-                @st.dialog("Confirmation")
-                def add_submit(emp_name):
-                    st.success(f"Created new user: {emp_name}")
-                    if st.button("Close"):
-                        st.rerun()
-                add_submit(new_emp_name)
+            st.session_state.form_message = ("success", f"Successfully created new user: {st.session_state.add_emp_name}")
+            st.session_state.form_submitted_successfully = True
+            st.rerun()
 
 st.write("---")
 
 # Edit Existing Employees Section
-st.subheader("Edit Passwords for Existing Employees")
+st.subheader("Edit Existing Employees")
+
 # Your existing logic for listing, searching, and editing employees.
 # This includes the search bar, pagination, expanders for each employee,
 # and the update button.
-# All of this is copied directly from your original file's "HR" section.
-# ...
-# (The full "Edit Existing Employees" code from your file is assumed here)
-# ...
+def handle_update(original_email, original_name, new_name, new_role, new_manager, new_password):
+    """Callback to handle updating a user in the database."""
+    # 1. Validate password if a new one was entered
+    if new_password:
+        validation_errors = validate_password(new_password)
+        if validation_errors:
+            st.error(f"Password Error: {' & '.join(validation_errors)}")
+            return # Stop the update if password is weak
+            
+    # 2. Build and execute the database query
+    update_params = [new_name, new_role, new_manager]
+    update_query = "UPDATE users SET username = %s, role = %s, managed_by = %s"
+
+    if new_password:
+        hashed = bcrypt.hashpw(new_password.encode(), bcrypt.gensalt())
+        update_query += ", password = %s"
+        update_params.append(hashed)
+
+    update_query += " WHERE email = %s"
+    update_params.append(original_email)
+
+    cursor.execute(update_query, tuple(update_params))
+    db.commit()
+
+    # 3. Handle cascading updates if the name changed
+    if new_name != original_name:
+        cursor.execute("UPDATE users SET managed_by = %s WHERE managed_by = %s", (new_name, original_name))
+        cursor.execute("UPDATE user_ratings SET rater = %s WHERE rater = %s", (new_name, original_name))
+        cursor.execute("UPDATE user_ratings SET ratee = %s WHERE ratee = %s", (new_name, original_name))
+        cursor.execute("UPDATE remarks SET rater = %s WHERE rater = %s", (new_name, original_name))
+        cursor.execute("UPDATE remarks SET ratee = %s WHERE ratee = %s", (new_name, original_name))
+        db.commit()
+
+    st.success(f"Updated details for {new_name}")
+
+
 def generate_and_set_password(key):
     """Callback function to update the password in session state."""
     st.session_state[key] = generate_random_password()
@@ -241,41 +286,19 @@ else:
                 )
 
             # Update button and logic
-            if st.button(f"Update {emp_name}", key=f"update_{emp_name}"):
-                validation_errors = []
-                if new_password:
-                    validation_errors = validate_password(new_password)
-
-                if validation_errors:
-                    for error in validation_errors:
-                        st.error(f"Password Error: {error}")
-                else:
-                    original_emp_username = emp_name # Keep track of the old name for queries
-                    update_params = [new_name, new_role, new_manager]
-                    update_query = "UPDATE users SET username = %s, role = %s, managed_by = %s"
-
-                    if new_password:
-                        hashed = bcrypt.hashpw(new_password.encode(), bcrypt.gensalt())
-                        update_query += ", password = %s"
-                        update_params.append(hashed)
-
-                    update_query += " WHERE email = %s"
-                    update_params.append(emp_username)
-
-                    cursor.execute(update_query, tuple(update_params))
-                    db.commit()
-
-                    if new_name != original_emp_username:
-                        # Update all related tables if name changed
-                        cursor.execute("UPDATE users SET managed_by = %s WHERE managed_by = %s", (new_name, original_emp_username))
-                        cursor.execute("UPDATE user_ratings SET rater = %s WHERE rater = %s", (new_name, original_emp_username))
-                        cursor.execute("UPDATE user_ratings SET ratee = %s WHERE ratee = %s", (new_name, original_emp_username))
-                        cursor.execute("UPDATE remarks SET rater = %s WHERE rater = %s", (new_name, original_emp_username))
-                        cursor.execute("UPDATE remarks SET ratee = %s WHERE ratee = %s", (new_name, original_emp_username))
-                        db.commit()
-
-                    st.success(f"Updated details for {emp_name}")
-                    st.rerun()
+            st.button(
+                f"Update {emp_name}",
+                key=f"update_{emp_name}",
+                on_click=handle_update,
+                args=(
+                    emp_username,       # original_email
+                    emp_name,           # original_name
+                    new_name,
+                    new_role,
+                    new_manager,
+                    new_password
+                )
+            )
 
     # --- Pagination Controls for Edit Section ---
     st.write("---")
@@ -294,185 +317,42 @@ else:
             st.session_state.employee_edit_page += 1
             st.rerun()
 
-# CHECKLIST-CODE-STARTS-HERE
+# --- NEW: VIEW ALL EVALUATIONS FOR HR ---
 st.markdown("---")
-# --- EVALUATION STATUS CHECKLIST ---
-st.markdown("## 📊 Evaluation Status Dashboard")
+st.subheader("All Employee & Manager Evaluations")
+st.info("As an HR, you can view all evaluation data. Use the search below to find a user.")
 
-# Custom CSS for the checklist
-st.markdown("""
-<style>
-.checklist-container {
-    background: transparent;
-    padding: 0px;
-    border-radius: 0px;
-    margin: 0px;
-    box-shadow: none;
-}
+cursor.execute("SELECT email, username, role, managed_by FROM users WHERE role != 'admin'")
+all_users = cursor.fetchall()
 
-.manager-section {
-    background: rgba(255, 255, 255, 0.1);
-    backdrop-filter: blur(10px);
-    border: 1px solid rgba(255, 255, 255, 0.18);
-    border-radius: 10px;
-    padding: 1px;
-    margin: 0px 0;
-}
+search_query = st.text_input("🔍 Search Any User by Name or Email", key="hr_search")
+filtered = [u for u in all_users if search_query.lower() in u[1].lower() or search_query.lower() in u[0].lower()] if search_query else all_users
 
-.employee-section {
-    background: rgba(255, 255, 255, 0.05);
-    backdrop-filter: blur(5px);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 8px;
-    padding: 1px;
-    margin: 8px 0;
-    margin-left: 20px;
-}
+# Pagination
+USERS_PER_PAGE = 6
+total = len(filtered)
+total_pages = (total + USERS_PER_PAGE - 1) // USERS_PER_PAGE
+page = st.session_state.get('hr_user_page', 1)
+start = (page-1)*USERS_PER_PAGE
+end = start + USERS_PER_PAGE
+for u in filtered[start:end]:
+    email, uname, urole, umgr = u
+    with st.expander(f"**{uname}** ({urole.title()}) - Managed by: {umgr}"):
+        if st.button("View Full Evaluation Report", key=f"hr_view_{email}"):
+            st.session_state['selected_employee'] = uname
+            st.switch_page("pages/Rating.py")
 
-.status-complete {
-    color: #4CAF50;
-    font-weight: bold;
-}
-
-.status-pending {
-    color: #FF9800;
-    font-weight: bold;
-}
-
-.status-not-started {
-    color: #F44336;
-    font-weight: bold;
-}
-
-.manager-title {
-    color: #2E3440;
-    font-size: 18px;
-    font-weight: bold;
-    margin-bottom: 10px;
-}
-
-.employee-name {
-    color: #2E3440;
-    font-size: 16px;
-    font-weight: 500;
-}
-</style>
-""", unsafe_allow_html=True)
-
-
-# Fetch all managers and their employees
-cursor.execute("""
-    SELECT DISTINCT managed_by 
-    FROM users 
-    WHERE managed_by IS NOT NULL AND managed_by != 'XYZ'
-    ORDER BY managed_by
-""")
-managers = [row[0] for row in cursor.fetchall()]
-
-st.markdown('<div class="checklist-container">', unsafe_allow_html=True)
-
-for manager in managers:
-    # Get manager's self-evaluation status (where rater = ratee)
-    cursor.execute("""
-        SELECT COUNT(DISTINCT criteria) 
-        FROM user_ratings 
-        WHERE rater = %s AND ratee = %s AND rating_type = 'self'
-    """, (manager, manager))
-    manager_self_eval_count = cursor.fetchone()[0]
-    manager_self_eval = manager_self_eval_count > 0
-
-    # Manager section
-    st.markdown('<div class="manager-section">', unsafe_allow_html=True)
-
-    manager_status = "✅ Complete" if manager_self_eval else "⏳ Pending"
-    status_class = "status-complete" if manager_self_eval else "status-pending"
-
-    st.markdown(f"""
-    <div class="manager-title">
-        👔 Manager: {manager}
-    <div class="{status_class}">
-        Self-Evaluation: {manager_status}
-    </div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    # Get employees under this manager
-    cursor.execute("""
-        SELECT username 
-        FROM users 
-        WHERE managed_by = %s AND role = 'employee'
-        ORDER BY username
-    """, (manager,))
-    employees = [row[0] for row in cursor.fetchall()]
-
-    if employees:
-        with st.expander(f"📋 Employees under {manager}"):
-            for employee in employees:
-                # Check employee's self-evaluation status
-                cursor.execute("""
-                    SELECT COUNT(DISTINCT criteria) 
-                    FROM user_ratings 
-                    WHERE rater = %s AND ratee = %s AND rating_type = 'self'
-                """, (employee, employee))
-                emp_self_eval_count = cursor.fetchone()[0]
-                emp_self_eval = emp_self_eval_count > 0
-
-                # Check if ANY manager has evaluated this employee
-                cursor.execute("""
-                    SELECT COUNT(DISTINCT criteria) 
-                    FROM user_ratings 
-                    WHERE ratee = %s AND rating_type = 'manager'
-                """, (employee,))
-                manager_eval_ratings = cursor.fetchone()[0]
-
-                cursor.execute("""
-                    SELECT COUNT(*) 
-                    FROM remarks 
-                    WHERE ratee = %s AND rating_type = 'manager'
-                """, (employee,))
-                manager_eval_remarks = cursor.fetchone()[0]
-
-                # Get the actual manager who evaluated (for display)
-                cursor.execute("""
-                    SELECT rater 
-                    FROM remarks 
-                    WHERE ratee = %s AND rating_type = 'manager' 
-                    LIMIT 1
-                """, (employee,))
-                actual_evaluator = cursor.fetchone()
-                evaluator_name = actual_evaluator[0] if actual_evaluator else manager
-
-                manager_eval = (manager_eval_ratings > 0) or (manager_eval_remarks > 0)
-
-                # Determine overall status
-                if emp_self_eval and manager_eval:
-                    overall_status = "✅ Fully Complete"
-                    status_class = "status-complete"
-                    eval_text = f"Have been evaluated by manager {evaluator_name} too."
-                elif emp_self_eval and not manager_eval:
-                    overall_status = "🔄 Self-Evaluation Done, Manager Pending"
-                    status_class = "status-pending"
-                    eval_text = f"Awaiting evaluation from manager {manager}."
-                elif not emp_self_eval and manager_eval:
-                    overall_status = "🔄 Manager Done, Self-Evaluation Pending"
-                    status_class = "status-pending"
-                    eval_text = f"Have been evaluated by manager {evaluator_name}, but self-evaluation pending."
-                else:
-                    overall_status = "❌ Not Started"
-                    status_class = "status-not-started"
-                    eval_text = f"No evaluations completed yet. Manager: {manager}"
-
-                st.markdown(f"""
-                <div class="employee-section">
-                    <div class="employee-name">👤 {employee}</div>
-                    <div class="{status_class}">{overall_status}</div>
-                    <div style="color: #B0BEC5; font-size: 14px; margin-top: 5px;">
-                        {eval_text}
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
-
-    st.markdown('</div>', unsafe_allow_html=True)
+col1, col2, col3 = st.columns([2,5,2])
+with col1:
+    if st.button("⬅️ Previous", disabled=(page<=1)):
+        st.session_state['hr_user_page'] = page-1
+        st.rerun()
+with col2:
+    st.markdown(f"<p style='text-align:center;'>Page {page} of {total_pages}</p>", unsafe_allow_html=True)
+with col3:
+    if st.button("Next ➡️", disabled=(page>=total_pages)):
+        st.session_state['hr_user_page'] = page+1
+        st.rerun()
 
 
 # --- LOGOUT BUTTON ---
