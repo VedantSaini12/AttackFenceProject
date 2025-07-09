@@ -11,7 +11,7 @@ from utils import generate_random_password
 st.set_page_config(page_title="HR Dashboard", page_icon="📋", layout="wide")
 
 # --- DATABASE AND TOKEN STORE (This part is crucial and must be in every file) ---
-@st.cache_resource
+#@st.cache_resource
 def get_db_connection():
     try:
         return connector.connect(host="localhost", user="root", password="sqladi@2710", database="auth")
@@ -172,16 +172,45 @@ st.subheader("Edit Existing Employees")
 # Your existing logic for listing, searching, and editing employees.
 # This includes the search bar, pagination, expanders for each employee,
 # and the update button.
-def handle_update(original_email, original_name, new_name, new_role, new_manager, new_password):
-    """Callback to handle updating a user in the database."""
+def handle_update(original_email, original_name, original_role, new_name, new_role, new_manager, new_password):
+    """Callback to handle updating a user in the database, including manager demotion."""
     # 1. Validate password if a new one was entered
     if new_password:
         validation_errors = validate_password(new_password)
         if validation_errors:
             st.error(f"Password Error: {' & '.join(validation_errors)}")
             return # Stop the update if password is weak
+
+    # --- START: DEMOTION LOGIC ---
+    if new_role == 'employee' and original_role == 'manager':
+        # This is a manager being demoted. Get their username first.
+        cursor.execute("SELECT username FROM users WHERE email = %s", (original_email,))
+        manager_username_result = cursor.fetchone()
+        
+        # Ensure the manager exists before proceeding with deletions
+        if manager_username_result:
+            manager_username = manager_username_result[0]
+
+            # 1. Unassign all employees who reported to this manager
+            cursor.execute("UPDATE users SET managed_by = NULL WHERE managed_by = %s", (manager_username,))
+            # 2. Delete all ratings given BY this person AS a manager
+            cursor.execute("DELETE FROM user_ratings WHERE rater = %s AND rating_type = 'manager'", (manager_username,))
+            # 3. Delete all remarks given BY this person AS a manager
+            cursor.execute("DELETE FROM remarks WHERE rater = %s AND rating_type = 'manager'", (manager_username,))
             
-    # 2. Build and execute the database query
+            # 4. NEW: Clean up related notifications
+            cursor.execute("""
+                DELETE FROM notifications 
+                WHERE 
+                    (recipient = %s AND notification_type = 'self_evaluation_completed')
+                OR
+                    (sender = %s AND notification_type = 'evaluation_completed')
+            """, (manager_username, manager_username))
+            
+            db.commit() # Commit these deletions
+    # --- END: DEMOTION LOGIC ---
+
+    # 2. Build and execute the main database query to update the user's record
     update_params = [new_name, new_role, new_manager]
     update_query = "UPDATE users SET username = %s, role = %s, managed_by = %s"
 
@@ -194,15 +223,21 @@ def handle_update(original_email, original_name, new_name, new_role, new_manager
     update_params.append(original_email)
 
     cursor.execute(update_query, tuple(update_params))
-    db.commit()
+    db.commit() # Commit the user update
 
-    # 3. Handle cascading updates if the name changed
+    # 3. Handle cascading updates if the username changed
     if new_name != original_name:
-        cursor.execute("UPDATE users SET managed_by = %s WHERE managed_by = %s", (new_name, original_name))
+        if new_role == 'manager': # Only if they REMAIN a manager
+             cursor.execute("UPDATE users SET managed_by = %s WHERE managed_by = %s", (new_name, original_name))
+        
+        # Always update their name in all ratings/remarks tables for records they KEPT (e.g., self-evals)
         cursor.execute("UPDATE user_ratings SET rater = %s WHERE rater = %s", (new_name, original_name))
         cursor.execute("UPDATE user_ratings SET ratee = %s WHERE ratee = %s", (new_name, original_name))
         cursor.execute("UPDATE remarks SET rater = %s WHERE rater = %s", (new_name, original_name))
         cursor.execute("UPDATE remarks SET ratee = %s WHERE ratee = %s", (new_name, original_name))
+        # Cascading name change on notifications table
+        cursor.execute("UPDATE notifications SET recipient = %s WHERE recipient = %s", (new_name, original_name))
+        cursor.execute("UPDATE notifications SET sender = %s WHERE sender = %s", (new_name, original_name))
         db.commit()
 
     st.success(f"Updated details for {new_name}")
@@ -250,20 +285,33 @@ else:
             new_name = st.text_input(f"New Name for {emp_name}", value=emp_name, key=f"name_{emp_username}")
 
             # Role and Manager select boxes
-            if emp_role == "employee":
-                cursor.execute("SELECT username FROM users WHERE role = 'manager'")
-                managers = [row[0] for row in cursor.fetchall()]
-                new_manager = st.selectbox(
-                    f"Manager for {emp_name}", managers,
-                    index=managers.index(emp_manager) if emp_manager in managers else 0,
-                    key=f"mgr_{emp_name}"
-                ) if managers else None
+            if emp_role in ["employee", "manager"]:
                 new_role = st.selectbox(
                     f"Role for {emp_name}",
                     ["employee", "manager", "hr"],
                     index=["employee", "manager", "hr"].index(emp_role),
                     key=f"role_{emp_name}"
                 )
+            else: # For HR or other roles
+                new_role = emp_role
+                st.text(f"Role: {emp_role.title()} (Cannot be changed)")
+            
+            # Show manager dropdown ONLY if the selected role is 'employee'
+            new_manager = None
+            if new_role == "employee":
+                cursor.execute("SELECT username FROM users WHERE role = 'manager'")
+                managers = [row[0] for row in cursor.fetchall()]
+                if managers:
+                    current_manager_index = managers.index(emp_manager) if emp_manager in managers else 0
+                    new_manager = st.selectbox(
+                        f"Manager for {emp_name}", managers,
+                        index=current_manager_index,
+                        key=f"mgr_{emp_name}"
+                    )
+                else:
+                    st.warning("No managers available to assign.")
+            elif new_role == "manager":
+                new_manager = 'XYZ' # A manager is managed by 'XYZ'
             else:
                 new_manager = emp_manager
                 new_role = emp_role
@@ -293,6 +341,7 @@ else:
                 args=(
                     emp_username,       # original_email
                     emp_name,           # original_name
+                    emp_role,           # ADD THIS: original_role
                     new_name,
                     new_role,
                     new_manager,
