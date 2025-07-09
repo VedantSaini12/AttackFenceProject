@@ -2,7 +2,6 @@ import streamlit as st
 import mysql.connector as connector
 import bcrypt
 import datetime
-# ## FIX: Removed unused imports: uuid, random, string
 from validators import validate_password, validate_email, ALLOWED_DOMAINS
 from utils import generate_random_password
 
@@ -11,7 +10,6 @@ def generate_and_set_password(key):
     """Callback function to update the password in session state."""
     st.session_state[key] = generate_random_password()
 
-# ## FIX: Moved the 'handle_update' function to the top level.
 # Defining functions inside conditional blocks is not a good practice.
 def handle_update(original_email, original_name, original_role, new_name, new_role, new_manager, new_password):
     """Callback to handle updating a user in the database, including demotion."""
@@ -123,11 +121,6 @@ def authenticate_user():
 if 'name' not in st.session_state:
     authenticate_user()
 
-# ## FIX: This line was incorrect and unnecessary.
-# `st.query_params` is read-only, and authentication is handled by the guard.
-# if 'token' in st.session_state:
-#     st.query_params.token = st.session_state['token']
-
 name = st.session_state['name']
 role = st.session_state['role']
 cursor = db.cursor(dictionary=True) # Use dictionary cursor for easier data access
@@ -229,9 +222,6 @@ with tab1:
     elif action == "Edit Existing User":
         st.subheader("Edit Existing User Details")
         
-        # ## FIX: Redundant function definition removed. It's now at the top level.
-
-        # ## FIX: SQL Injection vulnerability removed by parameterizing the query.
         cursor.execute("SELECT email, username, role, managed_by FROM users WHERE role != 'admin' and username != %s", (name,))
         employees = cursor.fetchall()
 
