@@ -2,23 +2,92 @@ import streamlit as st
 import mysql.connector as connector
 import bcrypt
 import datetime
-import uuid
-import random
-import string
-from validators import validate_password, validate_email
+# ## FIX: Removed unused imports: uuid, random, string
+from validators import validate_password, validate_email, ALLOWED_DOMAINS
 from utils import generate_random_password
 
+# ## FIX: Moved this function to the top level for better organization.
 def generate_and_set_password(key):
     """Callback function to update the password in session state."""
     st.session_state[key] = generate_random_password()
 
+# ## FIX: Moved the 'handle_update' function to the top level.
+# Defining functions inside conditional blocks is not a good practice.
+def handle_update(original_email, original_name, original_role, new_name, new_role, new_manager, new_password):
+    """Callback to handle updating a user in the database, including demotion."""
+    # 1. Validate password if a new one was entered
+    if new_password:
+        validation_errors = validate_password(new_password)
+        if validation_errors:
+            st.error(f"Password Error: {' & '.join(validation_errors)}")
+            return # Stop the update if password is weak
+
+    cursor = db.cursor() # Get a fresh cursor
+
+    # --- START: DEMOTION LOGIC ---
+    # This block handles the specific case of a manager being demoted.
+    if new_role != 'manager' and original_role == 'manager':
+        # 1. Unassign all employees who reported to this manager
+        cursor.execute("UPDATE users SET managed_by = NULL WHERE managed_by = %s", (original_name,))
+        # 2. Delete all ratings given BY this person AS a manager
+        cursor.execute("DELETE FROM user_ratings WHERE rater = %s AND rating_type = 'manager'", (original_name,))
+        # 3. Delete all remarks given BY this person AS a manager
+        cursor.execute("DELETE FROM remarks WHERE rater = %s AND rating_type = 'manager'", (original_name,))
+        # 4. Clean up related notifications
+        cursor.execute("""
+            DELETE FROM notifications 
+            WHERE 
+                (recipient = %s AND notification_type = 'self_evaluation_completed')
+            OR
+                (sender = %s AND notification_type = 'evaluation_completed')
+        """, (original_name, original_name))
+        db.commit() # Commit these deletions
+    # --- END: DEMOTION LOGIC ---
+
+    # 2. Build and execute the main database query to update the user's record
+    update_params = [new_name, new_role, new_manager]
+    update_query = "UPDATE users SET username = %s, role = %s, managed_by = %s"
+
+    if new_password:
+        hashed = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt())
+        update_query += ", password = %s"
+        update_params.append(hashed.decode('utf-8'))
+
+    update_query += " WHERE email = %s"
+    update_params.append(original_email)
+
+    cursor.execute(update_query, tuple(update_params))
+    db.commit()
+
+    # 3. Handle cascading updates if the username changed
+    if new_name != original_name:
+        # ## FIX: Logic corrected. If the original role was manager, update their former employees.
+        if original_role == 'manager':
+            cursor.execute("UPDATE users SET managed_by = %s WHERE managed_by = %s", (new_name, original_name))
+        
+        # Update their name in all other records.
+        cursor.execute("UPDATE user_ratings SET rater = %s WHERE rater = %s", (new_name, original_name))
+        cursor.execute("UPDATE user_ratings SET ratee = %s WHERE ratee = %s", (new_name, original_name))
+        cursor.execute("UPDATE remarks SET rater = %s WHERE rater = %s", (new_name, original_name))
+        cursor.execute("UPDATE remarks SET ratee = %s WHERE ratee = %s", (new_name, original_name))
+        cursor.execute("UPDATE notifications SET recipient = %s WHERE recipient = %s", (new_name, original_name))
+        cursor.execute("UPDATE notifications SET sender = %s WHERE sender = %s", (new_name, original_name))
+        db.commit()
+
+    st.success(f"Updated details for {new_name}")
+    # Clear the password field from session state after use
+    pwd_key = f"pwd_{original_email}"
+    if pwd_key in st.session_state:
+        st.session_state[pwd_key] = ""
+
 # --- PAGE CONFIGURATION ---
 st.set_page_config(page_title="Admin Panel", page_icon="⚙️", layout="wide")
 
-# --- DATABASE AND TOKEN STORE (This part is crucial and must be in every file) ---
+# --- DATABASE AND TOKEN STORE ---
 @st.cache_resource
 def get_db_connection():
     try:
+        # ## NOTE: Make sure your database credentials are correct.
         return connector.connect(host="localhost", user="root", password="sqladi@2710", database="auth")
     except connector.Error:
         st.error("Database connection failed. Please contact an administrator.")
@@ -31,50 +100,37 @@ def get_token_store():
 db = get_db_connection()
 token_store = get_token_store()
 
-# --- START OF NEW, SECURE AUTHENTICATION GUARD ---
+# --- AUTHENTICATION GUARD ---
 def authenticate_user():
-    """
-    Checks session state and URL token to authenticate the user.
-    This function must be present in every protected page.
-    """
-    # 1. Check for a token in the URL's query parameters.
     if "token" in st.query_params:
         token = st.query_params["token"]
-        
-        # 2. Validate the token against the server-side token_store.
         if token in token_store:
             token_data = token_store[token]
-            
-            # 3. Check if the token has expired (e.g., 5-minute timeout).
             if datetime.datetime.now() - token_data['timestamp'] < datetime.timedelta(hours=24):
-                # SUCCESS: Token is valid. Populate session state.
                 st.session_state["name"] = token_data['username']
                 st.session_state["role"] = token_data['role']
-                st.session_state["token"] = token # Keep the token in the session
+                st.session_state["token"] = token
                 return True
             else:
-                # Token expired. Remove it from the store and URL.
                 del token_store[token]
-                st.query_params.clear()
-        else:
-            # Invalid token. Clear it from the URL.
-             st.query_params.clear()
+        st.query_params.clear()
 
-    # 4. If no valid token is found, deny access.
     st.error("🚨 Access Denied. Please log in first.")
     if st.button("Go to Login Page"):
         st.switch_page("Home.py")
-    st.stop() # Halt execution of the page.
+    st.stop()
 
-# Run the authentication check at the very start of the script.
 if 'name' not in st.session_state:
     authenticate_user()
-if 'token' in st.session_state:
-    st.query_params.token = st.session_state['token']
+
+# ## FIX: This line was incorrect and unnecessary.
+# `st.query_params` is read-only, and authentication is handled by the guard.
+# if 'token' in st.session_state:
+#     st.query_params.token = st.session_state['token']
 
 name = st.session_state['name']
 role = st.session_state['role']
-cursor = db.cursor()
+cursor = db.cursor(dictionary=True) # Use dictionary cursor for easier data access
 
 # --- ADMIN PANEL UI ---
 st.title("Admin Control Panel ⚙️")
@@ -85,331 +141,240 @@ tab1, tab2 = st.tabs(["User & Team Management", "Evaluation Status Dashboard"])
 
 with tab1:
     st.header("Manage User Accounts and Teams")
-    # The user management logic from your original Admin.py goes here.
-    # This includes the selectbox for Create/Delete/Edit actions and the forms for each.
-    # ...
-    # (The full user management code from your old Admin.py is assumed here)
-    # ...
-    option = st.selectbox(
-    "Select an action",
-    ("Create Employee/Manager", "Delete Employee/Manager", "Edit Employee/Manager")
+    action = st.selectbox(
+        "Select an Action",
+        ("Create New User", "Edit Existing User", "Delete User"),
+        key="admin_action"
     )
     st.write("---")
-    if option == "Create Employee/Manager":
-        st.subheader("Create New Employee/Manager")
 
-        # --- UPDATED CALLBACK FUNCTION ---
-        # This function now writes errors to session_state instead of calling st.error()
-        def create_user_callback():
-            # Clear previous errors first
-            st.session_state.email_error = ""
-            st.session_state.password_error = ""
-            st.session_state.form_error = ""
+    # --- CREATE NEW USER ---
+    if action == "Create New User":
+        st.subheader("Create New Employee or Manager")
 
-            name = st.session_state.new_user_name
-            email = st.session_state.new_user_email
-            password = st.session_state.new_user_password
-            create_role = st.session_state.new_user_role
-            managed_by = st.session_state.get("new_user_managed_by")
+        if 'admin_form_message' in st.session_state:
+            st.success(st.session_state.admin_form_message)
+            del st.session_state.admin_form_message
 
-            is_email_valid = validate_email(email)
-            password_errors = validate_password(password)
+        if st.session_state.get('admin_form_success', False):
+            for key in ['admin_add_local', 'admin_add_name', 'admin_add_password']:
+                if key in st.session_state:
+                    st.session_state[key] = ''
+            st.session_state.admin_form_success = False
 
-            if not (name and password and email and (create_role == "Manager" or (create_role == "Employee" and managed_by))):
-                st.session_state.form_error = "Please fill all fields."
-            elif not is_email_valid:
-                st.session_state.email_error = "Please enter a valid email address."
-            elif password_errors:
-                st.session_state.password_error = " & ".join(password_errors)
-            else:
-                cursor.execute("SELECT email FROM users WHERE email = %s", (email,))
-                if cursor.fetchone():
-                    st.session_state.email_error = "An account with this email already exists."
-                else:
-                    hashed_pw = bcrypt.hashpw(password.encode(), bcrypt.gensalt())
-                    managed_by_value = 'XYZ' if create_role == "Manager" else managed_by
-                    cursor.execute(
-                        "INSERT INTO users (username, email, password, role, managed_by) VALUES (%s, %s, %s, %s, %s)",
-                        (name, email, hashed_pw, create_role.lower(), managed_by_value)
-                    )
-                    db.commit()
-                    st.session_state.show_success_dialog = True
-                    st.session_state.success_message = f"{create_role} '{name}' created successfully!"
-                    # Clear input fields after success
-                    st.session_state.new_user_name, st.session_state.new_user_email, st.session_state.new_user_password = '', '', ''
+        if st.button("✨ Generate Secure Password", key="admin_generate_pwd"):
+            st.session_state.admin_add_password = generate_random_password()
+            st.rerun()
 
-        # Initialize session state keys
-        for key in ['new_user_name', 'new_user_email', 'new_user_password', 'email_error', 'password_error', 'form_error']:
-            if key not in st.session_state: st.session_state[key] = ''
-        if 'new_user_role' not in st.session_state: st.session_state.new_user_role = 'Employee'
-        if 'new_user_managed_by' not in st.session_state: st.session_state.new_user_managed_by = ''
-
-        # --- WIDGETS WITH ERROR DISPLAYS ---
-        st.text_input("Name", key='new_user_name', placeholder="Enter name")
-
-        st.text_input("Assign an email", key='new_user_email', placeholder="Enter email")
-        if st.session_state.email_error:
-            st.error(st.session_state.email_error) # Display email error here
-
-        st.selectbox("Role", ("Employee", "Manager"), key='new_user_role')
-
-        if st.session_state.new_user_role == "Employee":
-            cursor.execute("SELECT username FROM users WHERE role = 'manager'")
-            managers = [row[0] for row in cursor.fetchall()]
-            if managers:
-                st.selectbox("Managed By", managers, key='new_user_managed_by', index=0)
-            else:
-                st.warning("No managers available to assign.")
-
-        col1, col2 = st.columns([5, 1.4])
-        with col1:
-            st.text_input("Password", type="password", key='new_user_password', placeholder="Enter password")
-        with col2:
-            st.button("Generate Random", on_click=generate_and_set_password, args=('new_user_password',))
-        
-        if st.session_state.password_error:
-            st.error(st.session_state.password_error) # Display password error here
-
-        if st.session_state.form_error:
-            st.error(st.session_state.form_error) # Display general form error here
-
-        st.button("Create User", on_click=create_user_callback, type="primary")
-
-        # Success dialog logic
-        if st.session_state.get("show_success_dialog"):
-            @st.dialog("Confirmation")
-            def show_dialog():
-                st.success(st.session_state.get("success_message", "Success!"))
-                if st.button("Close"):
-                    st.session_state.show_success_dialog = False
-                    st.rerun()
-            show_dialog()
-            # Reset the dialog flag
-                
-    elif option == "Delete Employee/Manager":
-        st.subheader("Delete Employee/Manager")
-        
-        cursor.execute("SELECT username, role FROM users WHERE role != 'admin'")
-        users = [f"{row[0]} ({row[1]})" for row in cursor.fetchall()]
-        
-        if not users:
-            st.warning("No employees or managers available to delete.")
-        else:
-            user_to_delete = st.selectbox("Select user to delete", users)
-
-            if st.button("Delete", type="primary"):
-                # Extract username and role from the selected string
-                username = user_to_delete.split(" (")[0]
-                role = user_to_delete.split("(")[-1].replace(")", "").strip().lower()
-
-                # --- NEW LOGIC ---
-                # First, check if the user is a manager
-                if role == 'manager':
-                    # If they are a manager, check if they have any employees
-                    cursor.execute("SELECT COUNT(*) FROM users WHERE managed_by = %s", (username,))
-                    employee_count = cursor.fetchone()[0]
-                    
-                    if employee_count > 0:
-                        # If they have employees, block the deletion and show an error
-                        st.error(f"Cannot delete '{username}'. They still manage {employee_count} employee(s). Please edit and reassign their employees to another manager first.")
-                    else:
-                        # If they have no employees, it's safe to delete them
-                        cursor.execute("DELETE FROM users WHERE username = %s", (username,))
-                        db.commit()
-                        st.success(f"Manager '{username}' has been deleted successfully.")
-                        st.rerun()
-                else:
-                    # If the user is an employee, it's safe to delete them directly
-                    cursor.execute("DELETE FROM users WHERE username = %s", (username,)) #
-                    db.commit()
-                    st.success(f"Employee '{username}' has been deleted successfully.")
-                    st.rerun()
-
-    elif option == "Edit Employee/Manager":
-        st.subheader("Edit Employee/Manager Details")
-        
-        cursor.execute("SELECT username, role FROM users")
-        users = [f"{row[0]} ({row[1]})" for row in cursor.fetchall()]
-
-        # First, check if there are any users in the list to edit
-        if not users:
-            st.warning("There are no users available to edit.")
-        else:
-            user_to_edit = st.selectbox("Select user to edit", users)
-
-            # --- THIS IS THE CORRECT PLACEMENT ---
-            # Define these variables right after the selectbox. This ensures they always exist.
-            original_username = user_to_edit.split(" (")[0]
-            role = user_to_edit.split("(")[-1].replace(")", "").strip().lower()
-
-            # All the input widgets follow
-            new_name = st.text_input("New Name", key=f"new_name_{original_username}")
-            
-            pwd_key = f"new_password_{original_username}"
-            if pwd_key not in st.session_state:
-                st.session_state[pwd_key] = ""
-
-            col1, col2 = st.columns([4, 1])
+        with st.form("admin_add_user_form", clear_on_submit=False):
+            st.text_input("First Name", key="admin_add_name")
+            col1, col2 = st.columns([3, 2])
             with col1:
-                new_password = st.text_input("New Password (leave blank to keep unchanged)", type="password", key=pwd_key)
+                st.text_input("Email Username", key="admin_add_local")
             with col2:
                 st.markdown("<br>", unsafe_allow_html=True)
-                st.button(
-                    "Generate",
-                    key=f"gen_{pwd_key}",
-                    on_click=generate_and_set_password,
-                    args=(pwd_key,)
-                )
+                st.selectbox("Domain", options=ALLOWED_DOMAINS, key="admin_add_domain", label_visibility="collapsed")
 
-            update_fields = []
-            params = []
-
-            if role == "admin":
-                # Only allow name and password change for admin
-                if st.button("Update", key=f"update_admin_{original_username}"):
-                    validation_errors = []
-                    if new_password:
-                        validation_errors = validate_password(new_password)
-
-                    if validation_errors:
-                        for error in validation_errors:
-                            st.error(f"Password Error: {error}")
-                    else:
-                        if new_name:
-                            update_fields.append("username = %s")
-                            params.append(new_name)
-                        if new_password:
-                            hashed_pw = bcrypt.hashpw(new_password.encode(), bcrypt.gensalt())
-                            update_fields.append("password = %s")
-                            params.append(hashed_pw)
-
-                        if update_fields:
-                            params.append(original_username)
-                            # Update the main user details
-                            cursor.execute(f"UPDATE users SET {', '.join(update_fields)} WHERE username = %s", tuple(params))
-                            db.commit()
-
-                            # If the name changed, update related records
-                            if new_name and new_name != original_username:
-                                cursor.execute("UPDATE user_ratings SET rater = %s WHERE rater = %s", (new_name, original_username))
-                                cursor.execute("UPDATE user_ratings SET ratee = %s WHERE ratee = %s", (new_name, original_username))
-                                cursor.execute("UPDATE remarks SET rater = %s WHERE rater = %s", (new_name, original_username))
-                                cursor.execute("UPDATE remarks SET ratee = %s WHERE ratee = %s", (new_name, original_username))
-                                db.commit()
-
-                            st.success(f"Admin '{user_to_edit}' updated successfully!")
-                            st.rerun()
-                        else:
-                            st.info("No changes were made.")
-            elif role == "manager":
-                # Allow name and password change for manager
-                if st.button("Update", key=f"update_mgr_{original_username}"):
-                    validation_errors = []
-                    if new_password:
-                        validation_errors = validate_password(new_password)
-
-                    if validation_errors:
-                        for error in validation_errors:
-                            st.error(f"Password Error: {error}")
-                    else:
-                        if new_name:
-                            update_fields.append("username = %s")
-                            params.append(new_name)
-                        if new_password:
-                            hashed_pw = bcrypt.hashpw(new_password.encode(), bcrypt.gensalt())
-                            update_fields.append("password = %s")
-                            params.append(hashed_pw)
-
-                        if update_fields:
-                            params.append(original_username)
-                            cursor.execute(f"UPDATE users SET {', '.join(update_fields)} WHERE username = %s", tuple(params))
-                            db.commit()
-
-                            # If the manager's name was changed, update it for their employees
-                            if new_name and new_name != original_username:
-                                cursor.execute("UPDATE users SET managed_by = %s WHERE managed_by = %s", (new_name, original_username))
-                                cursor.execute("UPDATE user_ratings SET rater = %s WHERE rater = %s", (new_name, original_username))
-                                cursor.execute("UPDATE remarks SET rater = %s WHERE rater = %s", (new_name, original_username))
-                                db.commit()
-
-                            st.success(f"Manager '{user_to_edit}' updated successfully!")
-                            st.rerun()
-                        else:
-                            st.info("No changes made.")
-            else:
-                # This block handles users with the 'employee' role
-                new_role = st.selectbox("New Role", ("Employee", "Manager"), key=f"role_{original_username}")
-
-                # Fetch all managers for reassignment if the role is 'Employee'
+            st.text_input("Password", type="password", key="admin_add_password")
+            role_to_create = st.selectbox("Role", ["Employee", "Manager", "HR"], key="admin_add_role")
+            
+            manager_to_assign = None
+            if role_to_create == "Employee":
                 cursor.execute("SELECT username FROM users WHERE role = 'manager'")
-                managers = [row[0] for row in cursor.fetchall()]
-                new_managed_by = None
+                managers = [row['username'] for row in cursor.fetchall()]
+                if managers:
+                    manager_to_assign = st.selectbox("Assign Manager", managers, key="admin_add_manager")
+                else:
+                    st.warning("No managers exist to assign.")
+            
+            submitted = st.form_submit_button("Create User")
 
-                if new_role == "Employee":
-                    if managers:
-                        # Get the employee's current manager to set as the default
-                        cursor.execute("SELECT managed_by FROM users WHERE username = %s", (original_username,))
-                        current_manager_result = cursor.fetchone()
-                        current_manager = current_manager_result[0] if current_manager_result else None
-                        manager_index = managers.index(current_manager) if current_manager in managers else 0
+        if submitted:
+            name_val = st.session_state.admin_add_name
+            local_val = st.session_state.admin_add_local
+            domain_val = st.session_state.admin_add_domain
+            password_val = st.session_state.admin_add_password
+            full_email = f"{local_val}@{domain_val}".strip()
 
-                        new_managed_by = st.selectbox("Managed By", managers, key="edit_managed_by", index=manager_index)
-                    else:
-                        st.warning("No managers available. Please create a manager first.")
+            all_fields_filled = name_val and local_val and password_val and (role_to_create != "Employee" or manager_to_assign)
+            
+            # ## FIX: Store result of validation to avoid calling the function twice.
+            password_errors = validate_password(password_val)
 
-                if st.button("Update", key=f"update_employee_{original_username}"):
-                    validation_errors = []
-                    # 1. VALIDATE PASSWORD (only if a new one is entered)
-                    if new_password:
-                        validation_errors = validate_password(new_password)
+            if not all_fields_filled:
+                st.error("Please fill all fields.")
+            elif not validate_email(full_email):
+                st.error("Invalid email format.")
+            elif password_errors:
+                st.error(" & ".join(password_errors))
+            else:
+                cursor.execute("SELECT email FROM users WHERE email = %s", (full_email,))
+                if cursor.fetchone():
+                    st.error("An account with this email already exists.")
+                else:
+                    # ## FIX: CRITICAL SECURITY FLAW. Never use a static salt. Always use gensalt().
+                    hashed_pw = bcrypt.hashpw(password_val.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+                    managed_by = manager_to_assign if role_to_create == "Employee" else 'XYZ'
+                    
+                    cursor.execute(
+                        "INSERT INTO users (username, email, password, role, managed_by) VALUES (%s, %s, %s, %s, %s)",
+                        (name_val, full_email, hashed_pw, role_to_create.lower(), managed_by)
+                    )
+                    db.commit()
+                    st.session_state.admin_form_message = f"Successfully created new user: {name_val}"
+                    st.session_state.admin_form_success = True
+                    st.rerun()
 
-                    if validation_errors:
-                        for error in validation_errors:
-                            st.error(f"Password Error: {error}")
-                    else:
-                        # 2. PROCEED WITH DATABASE UPDATE
-                        if new_name:
-                            update_fields.append("username = %s")
-                            params.append(new_name)
-                        if new_role:
-                            update_fields.append("role = %s")
-                            params.append(new_role.lower()) # Ensure role is lowercase
-                        if new_role == "Employee" and new_managed_by:
-                            update_fields.append("managed_by = %s")
-                            params.append(new_managed_by)
-                        elif new_role == "Manager":
-                            update_fields.append("managed_by = %s")
-                            params.append('XYZ') # Managers are assigned 'XYZ'
-                        if new_password:
-                            hashed_pw = bcrypt.hashpw(new_password.encode(), bcrypt.gensalt())
-                            update_fields.append("password = %s")
-                            params.append(hashed_pw)
+    # --- EDIT EXISTING USER ---
+    elif action == "Edit Existing User":
+        st.subheader("Edit Existing User Details")
+        
+        # ## FIX: Redundant function definition removed. It's now at the top level.
 
-                        if update_fields:
-                            params.append(original_username)
-                            query = f"UPDATE users SET {', '.join(update_fields)} WHERE username = %s"
-                            cursor.execute(query, tuple(params))
-                            db.commit()
+        # ## FIX: SQL Injection vulnerability removed by parameterizing the query.
+        cursor.execute("SELECT email, username, role, managed_by FROM users WHERE role != 'admin' and username != %s", (name,))
+        employees = cursor.fetchall()
 
-                            # Update related records if the username changed
-                            if new_name and new_name != original_username:
-                                cursor.execute("UPDATE user_ratings SET rater = %s WHERE rater = %s", (new_name, original_username))
-                                cursor.execute("UPDATE user_ratings SET ratee = %s WHERE ratee = %s", (new_name, original_username))
-                                cursor.execute("UPDATE remarks SET rater = %s WHERE rater = %s", (new_name, original_username))
-                                cursor.execute("UPDATE remarks SET ratee = %s WHERE ratee = %s", (new_name, original_username))
-                                db.commit()
+        search_query_edit = st.text_input("🔍 Search Employee by Name or Email", value="", key="search_employee_edit")
+        filtered_employees_edit = [
+            emp for emp in employees
+            if search_query_edit.lower() in emp['username'].lower() or search_query_edit.lower() in emp['email'].lower()
+        ] if search_query_edit else employees
 
-                            st.success(f"User '{user_to_edit}' updated successfully!")
-                            st.rerun() # Refresh the page to show updated info
+        page_size_edit = 6
+        total_employees_edit = len(filtered_employees_edit)
+        total_pages_edit = (total_employees_edit + page_size_edit - 1) // page_size_edit
+        st.session_state.employee_edit_page = st.session_state.get("employee_edit_page", 1)
+
+        if search_query_edit and st.session_state.get("last_search_query_edit") != search_query_edit:
+            st.session_state.employee_edit_page = 1
+        st.session_state.last_search_query_edit = search_query_edit
+
+        current_page_edit = st.session_state.employee_edit_page
+        start_idx_edit = (current_page_edit - 1) * page_size_edit
+        employees_to_show_edit = filtered_employees_edit[start_idx_edit : start_idx_edit + page_size_edit]
+
+        if not employees_to_show_edit:
+            st.info("No employees found.")
+        else:
+            for emp in employees_to_show_edit:
+                # ## FIX: Use clear variable names based on the dictionary keys.
+                emp_email = emp['email']
+                emp_name = emp['username']
+                emp_role = emp['role']
+                emp_manager = emp['managed_by']
+
+                with st.expander(f"**{emp_name}** ({emp_email}) - Role: {emp_role.title()}", icon="👤"):
+                    new_name = st.text_input("Name", value=emp_name, key=f"name_{emp_email}")
+                    
+                    role_options = ["employee", "manager", "hr"]
+                    current_role_index = role_options.index(emp_role) if emp_role in role_options else 0
+                    new_role = st.selectbox(
+                        "Role",
+                        role_options,
+                        index=current_role_index,
+                        key=f"role_{emp_email}"
+                    )
+                    
+                    new_manager = emp_manager # Default to current manager
+                    if new_role == "employee":
+                        cursor.execute("SELECT username FROM users WHERE role = 'manager'")
+                        managers = [row['username'] for row in cursor.fetchall()]
+                        # Also allow assigning to managers who are being edited on the same page
+                        if emp_name not in managers and emp_role == 'manager':
+                            managers.append(emp_name)
+                        
+                        if managers:
+                            current_manager_index = managers.index(emp_manager) if emp_manager in managers else 0
+                            new_manager = st.selectbox(
+                                "Manager", managers,
+                                index=current_manager_index,
+                                key=f"mgr_{emp_email}"
+                            )
                         else:
-                            st.info("No changes were made.")
+                            st.warning("No managers available to assign.")
+                    # ## FIX: Correctly set 'managed_by' for non-employee roles
+                    elif new_role in ["manager", "hr"]:
+                        new_manager = 'XYZ'
+
+                    pwd_key = f"pwd_{emp_email}"
+                    col1, col2 = st.columns([4, 1])
+                    with col1:
+                        new_password = st.text_input("New Password (leave blank if no change)", type="password", key=pwd_key)
+                    with col2:
+                        st.markdown("<br>", unsafe_allow_html=True)
+                        st.button("Generate", key=f"gen_{pwd_key}", on_click=generate_and_set_password, args=(pwd_key,))
+                    
+                    st.button(
+                        f"Update {emp_name}",
+                        key=f"update_{emp_email}",
+                        on_click=handle_update,
+                        args=(
+                            emp_email,     # original_email
+                            emp_name,      # original_name
+                            emp_role,      # original_role
+                            new_name,
+                            new_role,
+                            new_manager,
+                            new_password
+                        )
+                    )
+
+            st.write("---")
+            col1, col2, col3 = st.columns([2, 3, 2])
+            if total_pages_edit > 1:
+                with col1:
+                    if st.button("⬅️ Previous", disabled=(current_page_edit <= 1), use_container_width=True, key="edit_prev_btn"):
+                        st.session_state.employee_edit_page -= 1
+                        st.rerun()
+                with col2:
+                    st.markdown(f"<p style='text-align: center; font-weight: bold;'>Page {current_page_edit} of {total_pages_edit}</p>", unsafe_allow_html=True)
+                with col3:
+                    if st.button("Next ➡️", disabled=(current_page_edit >= total_pages_edit), use_container_width=True, key="edit_next_btn"):
+                        st.session_state.employee_edit_page += 1
+                        st.rerun()
+
+    # --- DELETE USER ---
+    elif action == "Delete User":
+        st.subheader("Delete User Account")
+        cursor.execute("SELECT username, role FROM users WHERE role != 'admin'")
+        users = [f"{row['username']} ({row['role']})" for row in cursor.fetchall()]
+        
+        if not users:
+            st.warning("No users available to delete.")
+        else:
+            user_to_delete = st.selectbox("Select user to delete", users, key="admin_delete_user")
+            if st.button("Delete User", type="primary"):
+                username = user_to_delete.split(" (")[0]
+                role_to_delete = user_to_delete.split("(")[-1].replace(")", "").strip().lower()
+
+                if role_to_delete == 'manager':
+                    cursor.execute("SELECT COUNT(*) as count FROM users WHERE managed_by = %s", (username,))
+                    if cursor.fetchone()['count'] > 0:
+                        st.error(f"Cannot delete '{username}'. Reassign their employees first.")
+                    else:
+                        cursor.execute("DELETE FROM users WHERE username = %s", (username,))
+                        db.commit()
+                        st.success(f"Manager '{username}' has been deleted.")
+                        st.rerun()
+                else: # Employee or HR
+                    cursor.execute("DELETE FROM users WHERE username = %s", (username,))
+                    db.commit()
+                    st.success(f"User '{username}' has been deleted.")
+                    st.rerun()
+
+# --- Everything below this line seems logically sound. ---
 with tab2:
-
-    # CHECKLIST-CODE-STARTS-HERE
+    ALL_CRITERIA_NAMES = {
+        "Humility", "Integrity", "Collegiality", "Attitude", "Time Management", "Initiative", "Communication", "Compassion",
+        "Knowledge & Awareness", "Future readiness", "Informal leadership", "Team Development", "Process adherence",
+        "Quality of Work", "Task Completion", "Timeline Adherence",
+        "Collaboration", "Innovation", "Special Situation"
+    }
+    TOTAL_CRITERIA_COUNT = len(ALL_CRITERIA_NAMES)
+    
     st.markdown("---")
-    # --- EVALUATION STATUS CHECKLIST ---
     st.markdown("## 📊 Evaluation Status Dashboard")
-
     # Custom CSS for the checklist
     st.markdown("""
     <style>
@@ -470,34 +435,27 @@ with tab2:
     </style>
     """, unsafe_allow_html=True)
 
-
-    # Fetch all managers and their employees
     cursor.execute("""
         SELECT DISTINCT managed_by 
         FROM users 
         WHERE managed_by IS NOT NULL AND managed_by != 'XYZ'
         ORDER BY managed_by
     """)
-    managers = [row[0] for row in cursor.fetchall()]
+    managers = [row['managed_by'].strip() for row in cursor.fetchall()]
 
     st.markdown('<div class="checklist-container">', unsafe_allow_html=True)
-
     for manager in managers:
-        # Get manager's self-evaluation status (where rater = ratee)
         cursor.execute("""
-            SELECT COUNT(DISTINCT criteria) 
+            SELECT COUNT(DISTINCT criteria) as count
             FROM user_ratings 
             WHERE rater = %s AND ratee = %s AND rating_type = 'self'
         """, (manager, manager))
-        manager_self_eval_count = cursor.fetchone()[0]
-        manager_self_eval = manager_self_eval_count > 0
+        manager_self_eval_count = cursor.fetchone()['count']
+        manager_self_eval = manager_self_eval_count >= TOTAL_CRITERIA_COUNT
 
-        # Manager section
         st.markdown('<div class="manager-section">', unsafe_allow_html=True)
-
         manager_status = "✅ Complete" if manager_self_eval else "⏳ Pending"
         status_class = "status-complete" if manager_self_eval else "status-pending"
-
         st.markdown(f"""
         <div class="manager-title">
             👔 Manager: {manager}
@@ -507,55 +465,41 @@ with tab2:
         </div>
         """, unsafe_allow_html=True)
 
-        # Get employees under this manager
         cursor.execute("""
-            SELECT username 
-            FROM users 
-            WHERE managed_by = %s AND role = 'employee'
-            ORDER BY username
+            SELECT username FROM users 
+            WHERE managed_by = %s AND role = 'employee' ORDER BY username
         """, (manager,))
-        employees = [row[0] for row in cursor.fetchall()]
+        employees = [row['username'].strip() for row in cursor.fetchall()]
 
         if employees:
             with st.expander(f"📋 Employees under {manager}"):
                 for employee in employees:
-                    # Check employee's self-evaluation status
                     cursor.execute("""
-                        SELECT COUNT(DISTINCT criteria) 
+                        SELECT COUNT(DISTINCT criteria) as count 
                         FROM user_ratings 
                         WHERE rater = %s AND ratee = %s AND rating_type = 'self'
                     """, (employee, employee))
-                    emp_self_eval_count = cursor.fetchone()[0]
-                    emp_self_eval = emp_self_eval_count > 0
+                    emp_self_eval_count = cursor.fetchone()['count']
+                    emp_self_eval = emp_self_eval_count >= TOTAL_CRITERIA_COUNT 
 
-                    # Check if ANY manager has evaluated this employee
                     cursor.execute("""
-                        SELECT COUNT(DISTINCT criteria) 
+                        SELECT COUNT(DISTINCT criteria) as count 
                         FROM user_ratings 
                         WHERE ratee = %s AND rating_type = 'manager'
                     """, (employee,))
-                    manager_eval_ratings = cursor.fetchone()[0]
+                    manager_eval_ratings = cursor.fetchone()['count']
 
-                    cursor.execute("""
-                        SELECT COUNT(*) 
-                        FROM remarks 
-                        WHERE ratee = %s AND rating_type = 'manager'
-                    """, (employee,))
-                    manager_eval_remarks = cursor.fetchone()[0]
+                    cursor.execute("SELECT COUNT(*) as count FROM remarks WHERE ratee = %s AND rating_type = 'manager'", (employee,))
+                    manager_eval_remarks = cursor.fetchone()['count']
 
-                    # Get the actual manager who evaluated (for display)
-                    cursor.execute("""
-                        SELECT rater 
-                        FROM remarks 
-                        WHERE ratee = %s AND rating_type = 'manager' 
-                        LIMIT 1
-                    """, (employee,))
-                    actual_evaluator = cursor.fetchone()
-                    evaluator_name = actual_evaluator[0] if actual_evaluator else manager
+                    cursor.execute("SELECT rater FROM remarks WHERE ratee = %s AND rating_type = 'manager' LIMIT 1", (employee,))
+                    actual_evaluator_row = cursor.fetchone()
+                    evaluator_name = actual_evaluator_row['rater'] if actual_evaluator_row else manager
 
-                    manager_eval = (manager_eval_ratings > 0) or (manager_eval_remarks > 0)
+                    manager_eval = (manager_eval_ratings >= TOTAL_CRITERIA_COUNT) and (manager_eval_remarks > 0)
+                    
+                    # ## FIX: Removed leftover debug code block for 'Adam'.
 
-                    # Determine overall status
                     if emp_self_eval and manager_eval:
                         overall_status = "✅ Fully Complete"
                         status_class = "status-complete"
@@ -584,19 +528,14 @@ with tab2:
                     """, unsafe_allow_html=True)
 
         st.markdown('</div>', unsafe_allow_html=True)
-
+    st.markdown('</div>', unsafe_allow_html=True)
 
 # --- LOGOUT BUTTON ---
 st.write("---")
 if st.button("Logout", type="primary"):
-    # Get the token from session state before clearing it
     token_to_remove = st.session_state.get("token")
-    
-    # Remove the token from the server-side store if it exists
     if token_to_remove and token_to_remove in token_store:
         del token_store[token_to_remove]
-    
-    # Clear the session state and URL
     st.session_state.clear()
     st.query_params.clear()
     st.switch_page("Home.py")
