@@ -9,10 +9,10 @@ from notifications import notification_bell_component, add_notification
 st.set_page_config(page_title="Manager Dashboard", page_icon="👔", layout="wide")
 
 # --- DATABASE AND TOKEN STORE (This part is crucial and must be in every file) ---
-@st.cache_resource
+#@st.cache_resource
 def get_db_connection():
     try:
-        return connector.connect(host="localhost", user="root", password="password", database="auth")
+        return connector.connect(host="localhost", user="root", password="sqladi@2710", database="auth")
     except connector.Error:
         st.error("Database connection failed. Please contact an administrator.")
         st.stop()
@@ -119,7 +119,7 @@ cursor = db.cursor()
 
 # --- MAIN DATABASE CONNECTION FOR THE PAGE ---
 try:
-    db = connector.connect(host="localhost", user="root", password="password", database="auth")
+    db = connector.connect(host="localhost", user="root", password="sqladi@2710", database="auth")
     cursor = db.cursor()
 except connector.Error as e:
     st.error(f"Database connection failed: {e}")
