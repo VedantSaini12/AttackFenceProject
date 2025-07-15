@@ -1,14 +1,18 @@
 import re
 
+ALLOWED_DOMAINS = ["evaluationportal.in", "example.com"]
+
 def validate_email(email: str) -> bool:
     """
-    Validates the format of an email address using a regex.
+    Validates the format of an email address using a regex and checks if the domain is allowed.
     Returns True if valid, False otherwise.
     """
-    # This regex checks for a standard email format.
-    pattern = r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"
-    if re.match(pattern, email):
-        return True
+    pattern = r"^[a-zA-Z0-9._%+-]+@([a-zA-Z0-9.-]+)\.[a-zA-Z]{2,}$"
+    match = re.match(pattern, email)
+    if match:
+        domain = email.split('@')[1].lower()
+        if domain in ALLOWED_DOMAINS:
+            return True
     return False
 
 def validate_password(password: str) -> list:
