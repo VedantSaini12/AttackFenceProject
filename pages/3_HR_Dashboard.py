@@ -4,7 +4,7 @@ import bcrypt
 import datetime
 import uuid
 from notifications import notification_bell_component, add_notification
-from validators import validate_password, validate_email, ALLOWED_DOMAINS
+from validators import validate_password, validate_email
 from utils import generate_random_password
 
 # --- PAGE CONFIGURATION ---
@@ -14,7 +14,7 @@ st.set_page_config(page_title="HR Dashboard", page_icon="📋", layout="wide")
 @st.cache_resource
 def get_db_connection():
     try:
-        return connector.connect(host="localhost", user="root", password="sqladi@2710", database="auth")
+        return connector.connect(host="localhost", user="root", password="password", database="auth")
     except connector.Error:
         st.error("Database connection failed. Please contact an administrator.")
         st.stop()
