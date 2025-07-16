@@ -14,7 +14,7 @@ from core.constants import (
 # Page Config
 st.set_page_config(page_title="Evaluation Report", layout="wide")
 
-protect_page(allowed_roles=["hr", "admin"])
+protect_page(allowed_roles=["HR", "admin"])
 
 db = get_db_connection()
 token_store = get_token_store()
