@@ -3,26 +3,11 @@ import streamlit as st
 import mysql.connector as connector
 from datetime import datetime
 from typing import List, Dict, Any
-
-# Note: Using st.session_state to hold the db connection is often more robust
-# in complex apps than @st.cache_resource for short-lived connections.
-def get_notification_db_connection():
-    if 'db_connection' not in st.session_state or st.session_state.db_connection.is_connected() == False:
-        try:
-            st.session_state.db_connection = connector.connect(
-                host="localhost",
-                user="root", 
-                password="sqladi@2710",
-                database="auth"
-            )
-        except connector.Error:
-            st.error("Database connection failed for notifications.")
-            return None
-    return st.session_state.db_connection
+from core.auth import get_db_connection
 
 def create_notifications_table():
     """Create notifications table if it doesn't exist"""
-    db = get_notification_db_connection()
+    db = get_db_connection()
     if db:
         cursor = db.cursor()
         cursor.execute("""
@@ -44,7 +29,7 @@ def create_notifications_table():
 
 def add_notification(recipient: str, message: str, notification_type: str, sender: str = None, related_id: int = None):
     """Add a new notification. This should be called when an event happens."""
-    db = get_notification_db_connection()
+    db = get_db_connection()
     if db:
         cursor = db.cursor()
         cursor.execute("""
@@ -56,7 +41,7 @@ def add_notification(recipient: str, message: str, notification_type: str, sende
 
 def get_user_notifications(username: str) -> List[Dict[str, Any]]:
     """Get all notifications for a user"""
-    db = get_notification_db_connection()
+    db = get_db_connection()
     if db:
         cursor = db.cursor(dictionary=True)
         cursor.execute("SELECT * FROM notifications WHERE recipient = %s ORDER BY created_at DESC", (username,))
@@ -67,7 +52,7 @@ def get_user_notifications(username: str) -> List[Dict[str, Any]]:
 
 def mark_all_read(username: str):
     """Mark all notifications as read for a user"""
-    db = get_notification_db_connection()
+    db = get_db_connection()
     if db:
         cursor = db.cursor()
         cursor.execute("UPDATE notifications SET is_read = TRUE WHERE recipient = %s", (username,))
