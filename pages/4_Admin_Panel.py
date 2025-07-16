@@ -2,11 +2,16 @@ import streamlit as st
 import mysql.connector as connector
 import bcrypt
 import datetime
-import uuid
-import random
-import string
-from validators import validate_password, validate_email
+from validators import validate_password, validate_email, ALLOWED_DOMAINS
 from utils import generate_random_password
+from core.auth import protect_page, render_logout_button, get_db_connection, get_token_store
+from core.constants import (
+    foundational_criteria,
+    futuristic_criteria,
+    development_criteria,
+    other_aspects_criteria,
+    all_criteria_names
+)
 
 def generate_and_set_password(key):
     """Callback function to update the password in session state."""
@@ -15,62 +20,10 @@ def generate_and_set_password(key):
 # --- PAGE CONFIGURATION ---
 st.set_page_config(page_title="Admin Panel", page_icon="⚙️", layout="wide")
 
-# --- DATABASE AND TOKEN STORE (This part is crucial and must be in every file) ---
-@st.cache_resource
-def get_db_connection():
-    try:
-        return connector.connect(host="localhost", user="root", password="sqladi@2710", database="auth")
-    except connector.Error:
-        st.error("Database connection failed. Please contact an administrator.")
-        st.stop()
-
-@st.cache_resource
-def get_token_store():
-    return {}
+protect_page(allowed_roles=["admin"])
 
 db = get_db_connection()
 token_store = get_token_store()
-
-# --- START OF NEW, SECURE AUTHENTICATION GUARD ---
-def authenticate_user():
-    """
-    Checks session state and URL token to authenticate the user.
-    This function must be present in every protected page.
-    """
-    # 1. Check for a token in the URL's query parameters.
-    if "token" in st.query_params:
-        token = st.query_params["token"]
-        
-        # 2. Validate the token against the server-side token_store.
-        if token in token_store:
-            token_data = token_store[token]
-            
-            # 3. Check if the token has expired (e.g., 5-minute timeout).
-            if datetime.datetime.now() - token_data['timestamp'] < datetime.timedelta(hours=24):
-                # SUCCESS: Token is valid. Populate session state.
-                st.session_state["name"] = token_data['username']
-                st.session_state["role"] = token_data['role']
-                st.session_state["token"] = token # Keep the token in the session
-                return True
-            else:
-                # Token expired. Remove it from the store and URL.
-                del token_store[token]
-                st.query_params.clear()
-        else:
-            # Invalid token. Clear it from the URL.
-             st.query_params.clear()
-
-    # 4. If no valid token is found, deny access.
-    st.error("🚨 Access Denied. Please log in first.")
-    if st.button("Go to Login Page"):
-        st.switch_page("Home.py")
-    st.stop() # Halt execution of the page.
-
-# Run the authentication check at the very start of the script.
-if 'name' not in st.session_state:
-    authenticate_user()
-if 'token' in st.session_state:
-    st.query_params.token = st.session_state['token']
 
 name = st.session_state['name']
 role = st.session_state['role']
@@ -98,58 +51,78 @@ with tab1:
     if option == "Create Employee/Manager":
         st.subheader("Create New Employee/Manager")
 
-        # --- UPDATED CALLBACK FUNCTION ---
-        # This function now writes errors to session_state instead of calling st.error()
         def create_user_callback():
-            # Clear previous errors first
+            """Callback to handle user creation with robust validation."""
+            # Clear previous errors
             st.session_state.email_error = ""
             st.session_state.password_error = ""
             st.session_state.form_error = ""
 
+            # Get values from session state
             name = st.session_state.new_user_name
-            email = st.session_state.new_user_email
+            email_local = st.session_state.new_user_email_local
+            email_domain = st.session_state.new_user_email_domain
             password = st.session_state.new_user_password
             create_role = st.session_state.new_user_role
             managed_by = st.session_state.get("new_user_managed_by")
 
-            is_email_valid = validate_email(email)
+            # Construct the full email address
+            full_email = f"{email_local}@{email_domain}" if email_local and email_domain else ""
+
+            # Perform validation
+            is_email_valid = validate_email(full_email)
             password_errors = validate_password(password)
 
-            if not (name and password and email and (create_role == "Manager" or (create_role == "Employee" and managed_by))):
-                st.session_state.form_error = "Please fill all fields."
+            if not (name and password and email_local and (create_role == "Manager" or (create_role == "Employee" and managed_by))):
+                st.session_state.form_error = "Please fill all required fields."
             elif not is_email_valid:
-                st.session_state.email_error = "Please enter a valid email address."
+                st.session_state.email_error = "Please enter a valid email address from an allowed domain."
             elif password_errors:
                 st.session_state.password_error = " & ".join(password_errors)
             else:
-                cursor.execute("SELECT email FROM users WHERE email = %s", (email,))
+                # Check if email already exists
+                cursor.execute("SELECT email FROM users WHERE email = %s", (full_email,))
                 if cursor.fetchone():
                     st.session_state.email_error = "An account with this email already exists."
                 else:
+                    # If all checks pass, create the user
                     hashed_pw = bcrypt.hashpw(password.encode(), bcrypt.gensalt())
                     managed_by_value = 'XYZ' if create_role == "Manager" else managed_by
                     cursor.execute(
                         "INSERT INTO users (username, email, password, role, managed_by) VALUES (%s, %s, %s, %s, %s)",
-                        (name, email, hashed_pw, create_role.lower(), managed_by_value)
+                        (name, full_email, hashed_pw, create_role.lower(), managed_by_value)
                     )
                     db.commit()
                     st.session_state.show_success_dialog = True
                     st.session_state.success_message = f"{create_role} '{name}' created successfully!"
+                    
                     # Clear input fields after success
-                    st.session_state.new_user_name, st.session_state.new_user_email, st.session_state.new_user_password = '', '', ''
+                    st.session_state.new_user_name = ''
+                    st.session_state.new_user_email_local = ''
+                    st.session_state.new_user_password = ''
 
-        # Initialize session state keys
-        for key in ['new_user_name', 'new_user_email', 'new_user_password', 'email_error', 'password_error', 'form_error']:
+
+        # Initialize session state keys for the form
+        for key in ['new_user_name', 'new_user_email_local', 'new_user_password', 'email_error', 'password_error', 'form_error']:
             if key not in st.session_state: st.session_state[key] = ''
         if 'new_user_role' not in st.session_state: st.session_state.new_user_role = 'Employee'
         if 'new_user_managed_by' not in st.session_state: st.session_state.new_user_managed_by = ''
+        if 'new_user_email_domain' not in st.session_state: st.session_state.new_user_email_domain = ALLOWED_DOMAINS[0]
+
 
         # --- WIDGETS WITH ERROR DISPLAYS ---
-        st.text_input("Name", key='new_user_name', placeholder="Enter name")
+        st.text_input("Name", key='new_user_name', placeholder="Enter Full Name")
 
-        st.text_input("Assign an email", key='new_user_email', placeholder="Enter email")
+        # --- UPDATED EMAIL INPUT WIDGETS ---
+        st.markdown("Assign an email")
+        col1, col2 = st.columns([3, 2])
+        with col1:
+            st.text_input("Email Username", key='new_user_email_local', placeholder="Enter email username", label_visibility="collapsed")
+        with col2:
+            st.selectbox("Domain", options=ALLOWED_DOMAINS, key="new_user_email_domain", label_visibility="collapsed")
+
         if st.session_state.email_error:
-            st.error(st.session_state.email_error) # Display email error here
+            st.error(st.session_state.email_error)
 
         st.selectbox("Role", ("Employee", "Manager"), key='new_user_role')
 
@@ -161,21 +134,22 @@ with tab1:
             else:
                 st.warning("No managers available to assign.")
 
-        col1, col2 = st.columns([5, 1.4])
-        with col1:
+        pwd_col1, pwd_col2 = st.columns([5, 1.4])
+        with pwd_col1:
             st.text_input("Password", type="password", key='new_user_password', placeholder="Enter password")
-        with col2:
+        with pwd_col2:
+            st.markdown("<br>", unsafe_allow_html=True)
             st.button("Generate Random", on_click=generate_and_set_password, args=('new_user_password',))
         
         if st.session_state.password_error:
-            st.error(st.session_state.password_error) # Display password error here
+            st.error(st.session_state.password_error)
 
         if st.session_state.form_error:
-            st.error(st.session_state.form_error) # Display general form error here
+            st.error(st.session_state.form_error)
 
         st.button("Create User", on_click=create_user_callback, type="primary")
 
-        # Success dialog logic
+        # Success dialog logic (remains the same)
         if st.session_state.get("show_success_dialog"):
             @st.dialog("Confirmation")
             def show_dialog():
@@ -184,7 +158,6 @@ with tab1:
                     st.session_state.show_success_dialog = False
                     st.rerun()
             show_dialog()
-            # Reset the dialog flag
                 
     elif option == "Delete Employee/Manager":
         st.subheader("Delete Employee/Manager")
@@ -586,17 +559,4 @@ with tab2:
         st.markdown('</div>', unsafe_allow_html=True)
 
 
-# --- LOGOUT BUTTON ---
-st.write("---")
-if st.button("Logout", type="primary"):
-    # Get the token from session state before clearing it
-    token_to_remove = st.session_state.get("token")
-    
-    # Remove the token from the server-side store if it exists
-    if token_to_remove and token_to_remove in token_store:
-        del token_store[token_to_remove]
-    
-    # Clear the session state and URL
-    st.session_state.clear()
-    st.query_params.clear()
-    st.switch_page("Home.py")
+render_logout_button()

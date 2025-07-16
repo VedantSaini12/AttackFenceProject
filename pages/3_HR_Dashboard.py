@@ -4,70 +4,25 @@ import bcrypt
 import datetime
 import uuid
 from notifications import notification_bell_component, add_notification
-from validators import validate_password, validate_email
+from validators import validate_password, validate_email, ALLOWED_DOMAINS
 from utils import generate_random_password
+from core.auth import protect_page, render_logout_button, get_db_connection, get_token_store
+from core.constants import (
+    foundational_criteria,
+    futuristic_criteria,
+    development_criteria,
+    other_aspects_criteria,
+    all_criteria_names
+)
+
 
 # --- PAGE CONFIGURATION ---
 st.set_page_config(page_title="HR Dashboard", page_icon="📋", layout="wide")
 
-# --- DATABASE AND TOKEN STORE (This part is crucial and must be in every file) ---
-@st.cache_resource
-def get_db_connection():
-    try:
-        return connector.connect(host="localhost", user="root", password="sqladi@2710", database="auth")
-    except connector.Error:
-        st.error("Database connection failed. Please contact an administrator.")
-        st.stop()
-
-@st.cache_resource
-def get_token_store():
-    return {}
+protect_page(allowed_roles=["HR"])
 
 db = get_db_connection()
 token_store = get_token_store()
-
-# --- AUTHENTICATION GUARD ---
-def authenticate_user():
-    """
-    Checks session state and URL token to authenticate the user.
-    This function must be present in every protected page.
-    """
-    # 1. Check for a token in the URL's query parameters.
-    if "token" in st.query_params:
-        token = st.query_params["token"]
-        
-        # 2. Validate the token against the server-side token_store.
-        if token in token_store:
-            token_data = token_store[token]
-            
-            # 3. Check if the token has expired (e.g., 5-minute timeout).
-            if datetime.datetime.now() - token_data['timestamp'] < datetime.timedelta(hours=24):
-                # SUCCESS: Token is valid. Populate session state.
-                st.session_state["name"] = token_data['username']
-                st.session_state["role"] = token_data['role']
-                st.session_state["token"] = token # Keep the token in the session
-                return True
-            else:
-                # Token expired. Remove it from the store and URL.
-                del token_store[token]
-                st.query_params.clear()
-        else:
-            # Invalid token. Clear it from the URL.
-             st.query_params.clear()
-
-    # 4. If no valid token is found, deny access.
-    st.error("🚨 Access Denied. Please log in first.")
-    if st.button("Go to Login Page"):
-        st.switch_page("Home.py")
-    st.stop() # Halt execution of the page.
-
-# Run the authentication check at the very start of the script.
-if "name" not in st.session_state:
-    authenticate_user()
-
-# If authentication is successful, ensure the token remains in the URL.
-if "token" in st.session_state:
-    st.query_params.token = st.session_state["token"]
 
 # Define session variables for easy use in the rest of the page
 name = st.session_state["name"]
@@ -86,83 +41,163 @@ st.write(f"<center><h2>Welcome {name}!</h2></center>", unsafe_allow_html=True)
 # Add New Employee Form
 st.subheader("Add New Employee")
 
-# --- PASSWORD GENERATION LOGIC (This part is correct and stays the same) ---
-if 'hr_add_pwd' not in st.session_state:
-    st.session_state.hr_add_pwd = ''
+# Display any message that was stored in the session state from the previous run
+if 'form_message' in st.session_state:
+    msg_type, msg_text = st.session_state.form_message
+    if msg_type == "success":
+        st.success(msg_text)
+    # This also allows you to show errors in the same way, e.g., else: st.error(msg_text)
+    # Clear the message so it doesn't appear again
+    del st.session_state.form_message
+
+# On the rerun after a success, this block will run first
+if st.session_state.get('form_submitted_successfully', False):
+    # Clear the form input states from the previous run
+    st.session_state.add_email_local = ''
+    st.session_state.add_emp_name = ''
+    st.session_state.add_emp_password = ''
+    # Reset the flag so this doesn't run again
+    st.session_state.form_submitted_successfully = False
 
 if st.button("✨ Generate Secure Password", key="hr_add_pwd_gen"):
-    st.session_state.hr_add_pwd = generate_random_password()
+    st.session_state.add_emp_password = generate_random_password()
     st.rerun()
 
-# --- THE FORM (with placeholders for errors) ---
-with st.form("add_employee_form", clear_on_submit=False): # Set clear_on_submit to False
-    new_emp_username = st.text_input("Email", placeholder="Enter user's email")
-    email_error_placeholder = st.empty()  # 1. Placeholder for email errors
+# Placeholders for error messages
+email_error_ph = st.empty()
+password_error_ph = st.empty()
+form_error_ph = st.empty()
 
-    new_emp_name = st.text_input("First Name", placeholder="Enter user's first name").title()
+with st.form("add_employee_form", clear_on_submit=False):
+    col1, col2 = st.columns([3, 3])
+    with col1:
+        email_local = st.text_input("Email Username", placeholder="Enter email username", key="add_email_local")
+    with col2:
+        st.markdown("<br>", unsafe_allow_html=True) # Spacer for alignment
+        st.selectbox("Domain", options=ALLOWED_DOMAINS, key="add_email_domain", label_visibility="collapsed")
 
-    new_emp_password = st.text_input("Password", type="password", key="hr_add_pwd", placeholder="Enter or generate a password")
-    password_error_placeholder = st.empty() # 2. Placeholder for password errors
+    first_name = st.text_input("Full Name", placeholder="Enter user's full name", key="add_emp_name")
+    password = st.text_input("Password", type="password", key="add_emp_password", placeholder="Enter or generate a password")
 
     cursor.execute("SELECT username FROM users WHERE role = 'manager'")
     managers = [row[0] for row in cursor.fetchall()]
-    selected_manager = st.selectbox("Assign Manager", managers) if managers else None
-
-    # General error placeholder at the bottom of the form
-    form_error_placeholder = st.empty()
+    manager = st.selectbox("Assign Manager", managers, key="add_emp_manager")
 
     submitted = st.form_submit_button("Add Employee")
 
-    if submitted:
-        # Perform all validations
-        is_email_valid = validate_email(new_emp_username)
-        password_errors = validate_password(new_emp_password)
-        all_fields_filled = new_emp_username and new_emp_password and new_emp_name and selected_manager
+# Handle form submission
+if submitted:
+    # Clear previous errors
+    email_error_ph.empty()
+    password_error_ph.empty()
+    form_error_ph.empty()
 
-        # 3. Write errors to the correct placeholder
-        if not all_fields_filled:
-            form_error_placeholder.error("Please fill all fields and select a manager.")
-        elif not is_email_valid:
-            email_error_placeholder.error("Please enter a valid email address.")
-        elif password_errors:
-            # Join all password validation messages into one
-            password_error_placeholder.error(" & ".join(password_errors))
+    full_email = f"{st.session_state.add_email_local}@{st.session_state.add_email_domain}" if st.session_state.add_email_local else ''
+    is_email_valid = validate_email(full_email)
+    password_errors = validate_password(st.session_state.add_emp_password)
+    all_fields = st.session_state.add_email_local and st.session_state.add_emp_name and st.session_state.add_emp_password and st.session_state.add_emp_manager
+
+    if not all_fields:
+        form_error_ph.error("Please fill all fields and select a manager.")
+    elif not is_email_valid:
+        email_error_ph.error(f"Email must be in the format username@domain. Enter username only.")
+    elif password_errors:
+        password_error_ph.error(" & ".join(password_errors))
+    else:
+        cursor.execute("SELECT email FROM users WHERE email = %s", (full_email,))
+        if cursor.fetchone():
+            email_error_ph.error("An account with this email already exists.")
         else:
-            # Check if email already exists
-            cursor.execute("SELECT email FROM users WHERE email = %s", (new_emp_username,))
-            if cursor.fetchone():
-                email_error_placeholder.error("An account with this email already exists.")
-            else:
-                # If all checks pass, create the user
-                hashed_pw = bcrypt.hashpw(new_emp_password.encode(), bcrypt.gensalt())
-                cursor.execute(
-                    "INSERT INTO users (email, password, role, managed_by, username) VALUES (%s, %s, %s, %s, %s)",
-                    (new_emp_username, hashed_pw, "employee", selected_manager, new_emp_name)
-                )
-                db.commit()
-                st.success(f"Successfully created new user: {new_emp_name}")
+            hashed_pw = bcrypt.hashpw(st.session_state.add_emp_password.encode(), bcrypt.gensalt())
+            cursor.execute(
+                "INSERT INTO users (email, password, role, managed_by, username) VALUES (%s, %s, %s, %s, %s)",
+                (full_email, hashed_pw, "employee", st.session_state.add_emp_manager, st.session_state.add_emp_name)
+            )
+            db.commit()
 
-                # Clear the password from session state after success
-                st.session_state.hr_add_pwd = ''
-
-                @st.dialog("Confirmation")
-                def add_submit(emp_name):
-                    st.success(f"Created new user: {emp_name}")
-                    if st.button("Close"):
-                        st.rerun()
-                add_submit(new_emp_name)
+            st.session_state.form_message = ("success", f"Successfully created new user: {st.session_state.add_emp_name}")
+            st.session_state.form_submitted_successfully = True
+            st.rerun()
 
 st.write("---")
 
 # Edit Existing Employees Section
-st.subheader("Edit Passwords for Existing Employees")
+st.subheader("Edit Existing Employees")
+
 # Your existing logic for listing, searching, and editing employees.
 # This includes the search bar, pagination, expanders for each employee,
 # and the update button.
-# All of this is copied directly from your original file's "HR" section.
-# ...
-# (The full "Edit Existing Employees" code from your file is assumed here)
-# ...
+def handle_update(original_email, original_name, original_role, new_name, new_role, new_manager, new_password):
+    """Callback to handle updating a user in the database, including manager demotion."""
+    # 1. Validate password if a new one was entered
+    if new_password:
+        validation_errors = validate_password(new_password)
+        if validation_errors:
+            st.error(f"Password Error: {' & '.join(validation_errors)}")
+            return # Stop the update if password is weak
+
+    # --- START: DEMOTION LOGIC ---
+    if new_role == 'employee' and original_role == 'manager':
+        # This is a manager being demoted. Get their username first.
+        cursor.execute("SELECT username FROM users WHERE email = %s", (original_email,))
+        manager_username_result = cursor.fetchone()
+        
+        # Ensure the manager exists before proceeding with deletions
+        if manager_username_result:
+            manager_username = manager_username_result[0]
+
+            # 1. Unassign all employees who reported to this manager
+            cursor.execute("UPDATE users SET managed_by = NULL WHERE managed_by = %s", (manager_username,))
+            # 2. Delete all ratings given BY this person AS a manager
+            cursor.execute("DELETE FROM user_ratings WHERE rater = %s AND rating_type = 'manager'", (manager_username,))
+            # 3. Delete all remarks given BY this person AS a manager
+            cursor.execute("DELETE FROM remarks WHERE rater = %s AND rating_type = 'manager'", (manager_username,))
+            
+            # 4. NEW: Clean up related notifications
+            cursor.execute("""
+                DELETE FROM notifications 
+                WHERE 
+                    (recipient = %s AND notification_type = 'self_evaluation_completed')
+                OR
+                    (sender = %s AND notification_type = 'evaluation_completed')
+            """, (manager_username, manager_username))
+            
+            db.commit() # Commit these deletions
+    # --- END: DEMOTION LOGIC ---
+
+    # 2. Build and execute the main database query to update the user's record
+    update_params = [new_name, new_role, new_manager]
+    update_query = "UPDATE users SET username = %s, role = %s, managed_by = %s"
+
+    if new_password:
+        hashed = bcrypt.hashpw(new_password.encode(), bcrypt.gensalt())
+        update_query += ", password = %s"
+        update_params.append(hashed)
+
+    update_query += " WHERE email = %s"
+    update_params.append(original_email)
+
+    cursor.execute(update_query, tuple(update_params))
+    db.commit() # Commit the user update
+
+    # 3. Handle cascading updates if the username changed
+    if new_name != original_name:
+        if new_role == 'manager': # Only if they REMAIN a manager
+             cursor.execute("UPDATE users SET managed_by = %s WHERE managed_by = %s", (new_name, original_name))
+        
+        # Always update their name in all ratings/remarks tables for records they KEPT (e.g., self-evals)
+        cursor.execute("UPDATE user_ratings SET rater = %s WHERE rater = %s", (new_name, original_name))
+        cursor.execute("UPDATE user_ratings SET ratee = %s WHERE ratee = %s", (new_name, original_name))
+        cursor.execute("UPDATE remarks SET rater = %s WHERE rater = %s", (new_name, original_name))
+        cursor.execute("UPDATE remarks SET ratee = %s WHERE ratee = %s", (new_name, original_name))
+        # Cascading name change on notifications table
+        cursor.execute("UPDATE notifications SET recipient = %s WHERE recipient = %s", (new_name, original_name))
+        cursor.execute("UPDATE notifications SET sender = %s WHERE sender = %s", (new_name, original_name))
+        db.commit()
+
+    st.success(f"Updated details for {new_name}")
+
+
 def generate_and_set_password(key):
     """Callback function to update the password in session state."""
     st.session_state[key] = generate_random_password()
@@ -205,20 +240,33 @@ else:
             new_name = st.text_input(f"New Name for {emp_name}", value=emp_name, key=f"name_{emp_username}")
 
             # Role and Manager select boxes
-            if emp_role == "employee":
-                cursor.execute("SELECT username FROM users WHERE role = 'manager'")
-                managers = [row[0] for row in cursor.fetchall()]
-                new_manager = st.selectbox(
-                    f"Manager for {emp_name}", managers,
-                    index=managers.index(emp_manager) if emp_manager in managers else 0,
-                    key=f"mgr_{emp_name}"
-                ) if managers else None
+            if emp_role in ["employee", "manager"]:
                 new_role = st.selectbox(
                     f"Role for {emp_name}",
                     ["employee", "manager", "hr"],
                     index=["employee", "manager", "hr"].index(emp_role),
-                    key=f"role_{emp_name}"
+                    key=f"role_{emp_username}"
                 )
+            else: # For HR or other roles
+                new_role = emp_role
+                st.text(f"Role: {emp_role.title()} (Cannot be changed)")
+            
+            # Show manager dropdown ONLY if the selected role is 'employee'
+            new_manager = None
+            if new_role == "employee":
+                cursor.execute("SELECT username FROM users WHERE role = 'manager'")
+                managers = [row[0] for row in cursor.fetchall()]
+                if managers:
+                    current_manager_index = managers.index(emp_manager) if emp_manager in managers else 0
+                    new_manager = st.selectbox(
+                        f"Manager for {emp_name}", managers,
+                        index=current_manager_index,
+                        key=f"mgr_{emp_username}"
+                    )
+                else:
+                    st.warning("No managers available to assign.")
+            elif new_role == "manager":
+                new_manager = 'XYZ' # A manager is managed by 'XYZ'
             else:
                 new_manager = emp_manager
                 new_role = emp_role
@@ -241,41 +289,20 @@ else:
                 )
 
             # Update button and logic
-            if st.button(f"Update {emp_name}", key=f"update_{emp_name}"):
-                validation_errors = []
-                if new_password:
-                    validation_errors = validate_password(new_password)
-
-                if validation_errors:
-                    for error in validation_errors:
-                        st.error(f"Password Error: {error}")
-                else:
-                    original_emp_username = emp_name # Keep track of the old name for queries
-                    update_params = [new_name, new_role, new_manager]
-                    update_query = "UPDATE users SET username = %s, role = %s, managed_by = %s"
-
-                    if new_password:
-                        hashed = bcrypt.hashpw(new_password.encode(), bcrypt.gensalt())
-                        update_query += ", password = %s"
-                        update_params.append(hashed)
-
-                    update_query += " WHERE email = %s"
-                    update_params.append(emp_username)
-
-                    cursor.execute(update_query, tuple(update_params))
-                    db.commit()
-
-                    if new_name != original_emp_username:
-                        # Update all related tables if name changed
-                        cursor.execute("UPDATE users SET managed_by = %s WHERE managed_by = %s", (new_name, original_emp_username))
-                        cursor.execute("UPDATE user_ratings SET rater = %s WHERE rater = %s", (new_name, original_emp_username))
-                        cursor.execute("UPDATE user_ratings SET ratee = %s WHERE ratee = %s", (new_name, original_emp_username))
-                        cursor.execute("UPDATE remarks SET rater = %s WHERE rater = %s", (new_name, original_emp_username))
-                        cursor.execute("UPDATE remarks SET ratee = %s WHERE ratee = %s", (new_name, original_emp_username))
-                        db.commit()
-
-                    st.success(f"Updated details for {emp_name}")
-                    st.rerun()
+            st.button(
+                f"Update {emp_name}",
+                key=f"update_{emp_username}",
+                on_click=handle_update,
+                args=(
+                    emp_username,       # original_email
+                    emp_name,           # original_name
+                    emp_role,           # ADD THIS: original_role
+                    new_name,
+                    new_role,
+                    new_manager,
+                    new_password
+                )
+            )
 
     # --- Pagination Controls for Edit Section ---
     st.write("---")
@@ -331,18 +358,4 @@ with col3:
         st.session_state['hr_user_page'] = page+1
         st.rerun()
 
-
-# --- LOGOUT BUTTON ---
-st.write("---")
-if st.button("Logout", type="primary"):
-    # Get the token from session state before clearing it
-    token_to_remove = st.session_state.get("token")
-    
-    # Remove the token from the server-side store if it exists
-    if token_to_remove and token_to_remove in token_store:
-        del token_store[token_to_remove]
-    
-    # Clear the session state and URL
-    st.session_state.clear()
-    st.query_params.clear()
-    st.switch_page("Home.py")
+render_logout_button()

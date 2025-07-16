@@ -5,6 +5,7 @@ import base64
 from pathlib import Path
 import datetime
 import uuid
+from core.auth import get_db_connection, get_token_store
 
 # --- PAGE CONFIGURATION ---
 st.set_page_config(
@@ -24,31 +25,13 @@ def image_to_base64(path_to_image):
         # Return a placeholder or None if the file is not found
         return None
 
-# --- DATABASE CONNECTION (Your existing logic) ---
-# It's good practice to wrap this in a function to handle potential errors
-@st.cache_resource
-def get_db_connection():
-    try:
-        db = connector.connect(
-            host="localhost",
-            user="root",
-            password="sqladi@2710",
-            database="auth"
-        )
-        return db
-    except connector.Error as err:
-        st.error(f"Error connecting to database: {err}")
-        return None
+# --- DATABASE CONNECTION (from core.auth) ---
 
 db = get_db_connection()
 if db:
     cursor = db.cursor()
 else:
     st.stop()
-
-@st.cache_resource
-def get_token_store():
-    return {}
 
 token_store = get_token_store()
 

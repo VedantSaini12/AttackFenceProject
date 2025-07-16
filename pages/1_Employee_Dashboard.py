@@ -3,79 +3,26 @@ import mysql.connector as connector
 import datetime
 import uuid
 from notifications import notification_bell_component, add_notification
+from core.auth import protect_page, render_logout_button, get_db_connection, get_token_store
+from core.constants import (
+    foundational_criteria,
+    futuristic_criteria,
+    development_criteria,
+    other_aspects_criteria,
+    all_criteria_names
+)
 
 # --- PAGE CONFIGURATION ---
 st.set_page_config(page_title="Employee Dashboard", page_icon="👤", layout="wide")
 
-# --- DATABASE AND TOKEN STORE (This part is crucial and must be in every file) ---
-@st.cache_resource
-def get_db_connection():
-    try:
-        return connector.connect(host="localhost", user="root", password="sqladi@2710", database="auth")
-    except connector.Error:
-        st.error("Database connection failed. Please contact an administrator.")
-        st.stop()
-
-@st.cache_resource
-def get_token_store():
-    return {}
+protect_page(allowed_roles=["employee"]) 
 
 db = get_db_connection()
 token_store = get_token_store()
 
-# --- START OF NEW, SECURE AUTHENTICATION GUARD ---
-def authenticate_user():
-    """
-    Checks session state and URL token to authenticate the user.
-    This function must be present in every protected page.
-    """
-    # 1. Check for a token in the URL's query parameters.
-    if "token" in st.query_params:
-        token = st.query_params["token"]
-        
-        # 2. Validate the token against the server-side token_store.
-        if token in token_store:
-            token_data = token_store[token]
-            
-            # 3. Check if the token has expired (e.g., 5-minute timeout).
-            if datetime.datetime.now() - token_data['timestamp'] < datetime.timedelta(hours=24):
-                # SUCCESS: Token is valid. Populate session state.
-                st.session_state["name"] = token_data['username']
-                st.session_state["role"] = token_data['role']
-                st.session_state["token"] = token # Keep the token in the session
-                return True
-            else:
-                # Token expired. Remove it from the store and URL.
-                del token_store[token]
-                st.query_params.clear()
-        else:
-            # Invalid token. Clear it from the URL.
-             st.query_params.clear()
-
-    # 4. If no valid token is found, deny access.
-    st.error("🚨 Access Denied. Please log in first.")
-    if st.button("Go to Login Page"):
-        st.switch_page("Home.py")
-    st.stop() # Halt execution of the page.
-
-# Run the authentication check at the very start of the script.
-if "name" not in st.session_state:
-    authenticate_user()
-
-# If authentication is successful, ensure the token remains in the URL.
-if "token" in st.session_state:
-    st.query_params.token = st.session_state["token"]
-
 name = st.session_state["name"]
 role = st.session_state["role"]
-
-# --- MAIN DATABASE CONNECTION FOR THE PAGE ---
-try:
-    db = connector.connect(host="localhost", user="root", password="sqladi@2710", database="auth")
-    cursor = db.cursor()
-except connector.Error as e:
-    st.error(f"Database connection failed: {e}")
-    st.stop()
+cursor = db.cursor()
 
 notification_bell_component(st.session_state.name)
 
@@ -175,7 +122,7 @@ with st.expander("Open Self-Evaluation Form", expanded=False):
         ORDER BY timestamp DESC
     """, (name, name))
     self_ratings = cursor.fetchall()
-
+    
     foundational_criteria = [
         ("Humility", 12.5),
         ("Integrity", 12.5),
@@ -186,7 +133,6 @@ with st.expander("Open Self-Evaluation Form", expanded=False):
         ("Communication", 12.5),
         ("Compassion", 12.5),
     ]
-
     futuristic_criteria = [
         ("Knowledge & Awareness", 20),
         ("Future readiness", 20),
@@ -199,7 +145,6 @@ with st.expander("Open Self-Evaluation Form", expanded=False):
         ("Task Completion", 14),
         ("Timeline Adherence", 28),
     ]
-
     other_aspects_criteria = [
         ("Collaboration", 10),
         ("Innovation", 10),
@@ -271,13 +216,13 @@ with st.expander("Open Self-Evaluation Form", expanded=False):
             # Check for already submitted criteria one last time to prevent duplicates
             cursor.execute("SELECT criteria FROM user_ratings WHERE rater = %s AND rating_type = 'self'", (name,))
             already_submitted = {row[0] for row in cursor.fetchall()}
-            
+            quarter = datetime.datetime.now().month // 3 + 1 if datetime.datetime.now().month % 3 != 0 else datetime.datetime.now().month // 3
             # Insert all new scores in a single loop
             for crit, score in all_scores.items():
                 if crit not in already_submitted:
                     cursor.execute(
-                        "INSERT INTO user_ratings (rater, ratee, role, criteria, score, rating_type) VALUES (%s, %s, %s, %s, %s, %s)",
-                        (name, name, role, crit, score, "self")
+                        "INSERT INTO user_ratings (rater, ratee, role, criteria, score, rating_type, quarter) VALUES (%s, %s, %s, %s, %s, %s,%s)",
+                        (name, name, role, crit, score, "self",quarter)
                     )
             db.commit()
             # --- ADD THIS NOTIFICATION LOGIC ---
@@ -293,18 +238,6 @@ with st.expander("Open Self-Evaluation Form", expanded=False):
                 )
             # --- END OF NOTIFICATION LOGIC ---
             self_submit()
+            st.rerun()
 
-# --- LOGOUT BUTTON ---
-st.write("---")
-if st.button("Logout", type="primary"):
-    # Get the token from session state before clearing it
-    token_to_remove = st.session_state.get("token")
-    
-    # Remove the token from the server-side store if it exists
-    if token_to_remove and token_to_remove in token_store:
-        del token_store[token_to_remove]
-    
-    # Clear the session state and URL
-    st.session_state.clear()
-    st.query_params.clear()
-    st.switch_page("Home.py")
+render_logout_button()
