@@ -86,7 +86,7 @@ st.set_page_config(page_title="Admin Panel", page_icon="⚙️", layout="wide")
 def get_db_connection():
     try:
         # ## NOTE: Make sure your database credentials are correct.
-        return connector.connect(host="localhost", user="root", password="sqladi@2710", database="auth")
+        return connector.connect(host="localhost", user="root", password="password", database="auth")
     except connector.Error:
         st.error("Database connection failed. Please contact an administrator.")
         st.stop()
@@ -124,6 +124,118 @@ if 'name' not in st.session_state:
 name = st.session_state['name']
 role = st.session_state['role']
 cursor = db.cursor(dictionary=True) # Use dictionary cursor for easier data access
+
+# --- SIDEBAR CONFIGURATION ---
+with st.sidebar:
+    st.markdown("""
+        <style>
+        .sidebar-title {
+            color: #2E3440;
+            font-size: 26px;
+            font-weight: 700;
+            margin-bottom: 10px;
+            letter-spacing: 1px;
+        }
+        .sidebar-nav {
+            margin-top: 20px;
+            margin-bottom: 20px;
+        }
+        .sidebar-btn {
+            display: block;
+            width: 100%;
+            padding: 10px 0;
+            margin: 8px 0;
+            background: #F7F9FB;
+            color: #2E3440;
+            border-radius: 8px;
+            font-size: 17px;
+            font-weight: 500;
+            text-align: left;
+            border: none;
+            transition: background 0.2s, color 0.2s, box-shadow 0.2s;
+            cursor: pointer;
+            box-shadow: none;
+        }
+        .sidebar-btn.selected {
+            background: #E3F2FD;
+            color: #1976D2 !important;
+            box-shadow: 0 2px 8px rgba(25, 118, 210, 0.08);
+        }
+        .sidebar-btn:hover {
+            background: #E3F2FD;
+            color: #1976D2 !important;
+        }
+        .sidebar-user {
+            color: #4F8DFD;
+            font-size: 16px;
+            margin-top: 18px;
+            margin-bottom: 8px;
+            font-weight: 500;
+        }
+        .sidebar-logout {
+            background: none;
+            color: #F44336;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            padding: 8px 0;
+            width: 100%;
+            margin-top: 12px;
+            cursor: pointer;
+            transition: background 0.2s, color 0.2s;
+        }
+        .sidebar-logout:hover {
+            background: #F44336;
+            color: white !important;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+    st.image("https://avatars.githubusercontent.com/u/9919?s=200&v=4", width=60)
+    st.markdown("<div class='sidebar-title'>Admin Panel</div>", unsafe_allow_html=True)
+    st.markdown("---", unsafe_allow_html=True)
+
+    nav_choice = st.session_state.get("admin_sidebar_option", "User Management")
+    st.markdown("<div class='sidebar-nav'>", unsafe_allow_html=True)
+    # Professional styled buttons for navigation
+    btn_labels = [("User Management", "sidebar_user_mgmt"), ("Eval Dashboard", "sidebar_eval_dashboard")]
+    for label, key in btn_labels:
+        selected = nav_choice == label
+        btn_clicked = st.button(
+            label,
+            key=key,
+            use_container_width=True
+        )
+        # Custom highlight using markdown
+        if selected:
+            st.markdown(
+                f"<style>div[data-testid='stButton'][key='{key}'] button {{background: #E3F2FD; color: #1976D2;}}</style>",
+                unsafe_allow_html=True
+            )
+        if btn_clicked:
+            st.session_state["admin_sidebar_option"] = label
+            st.rerun()
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    st.markdown("---", unsafe_allow_html=True)
+    st.markdown(f"<div class='sidebar-user'>Logged in as: <b>{name}</b></div>", unsafe_allow_html=True)
+    if st.button("Logout", key="sidebar_logout"):
+        token_to_remove = st.session_state.get("token")
+        if token_to_remove and token_to_remove in token_store:
+            del token_store[token_to_remove]
+        st.session_state.clear()
+        st.switch_page("Home.py")
+
+# Show content based on sidebar selection
+sidebar_option = st.session_state.get("admin_sidebar_option", "User Management")
+if sidebar_option == "User Management":
+    tab1, _ = st.tabs(["User & Team Management", "Evaluation Status Dashboard"])
+    with tab1:
+        pass  # The rest of your tab1 code is already present below
+elif sidebar_option == "Eval Dashboard":
+    _, tab2 = st.tabs(["User & Team Management", "Evaluation Status Dashboard"])
+    with tab2:
+        pass  # The rest of your tab2 code is already present below
 
 # --- ADMIN PANEL UI ---
 st.title("Admin Control Panel ⚙️")
@@ -344,7 +456,6 @@ with tab1:
                         st.error(f"Cannot delete '{username}'. Reassign their employees first.")
                     else:
                         cursor.execute("DELETE FROM users WHERE username = %s", (username,))
-                        db.commit()
                         st.success(f"Manager '{username}' has been deleted.")
                         st.rerun()
                 else: # Employee or HR
@@ -519,13 +630,3 @@ with tab2:
 
         st.markdown('</div>', unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
-
-# --- LOGOUT BUTTON ---
-st.write("---")
-if st.button("Logout", type="primary"):
-    token_to_remove = st.session_state.get("token")
-    if token_to_remove and token_to_remove in token_store:
-        del token_store[token_to_remove]
-    st.session_state.clear()
-    st.query_params.clear()
-    st.switch_page("Home.py")
