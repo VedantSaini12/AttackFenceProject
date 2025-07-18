@@ -22,7 +22,7 @@ token_store = get_token_store()
 # Define session variables for easy use in the rest of the page
 name = st.session_state["name"]
 role = st.session_state["role"]
-cursor = db.cursor()
+cursor = db.cursor(buffered=True)
 
 # --- END OF THE NEW SECURE AUTHENTICATION GUARD ---
     
@@ -57,6 +57,8 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
+col1, col2 = st.columns(2)
+
 # --- Session check for selected employee ---
 # This check now runs AFTER the main authentication check.
 employee = st.session_state.get("selected_employee")
@@ -81,104 +83,7 @@ user_role, managed_by = user_details if user_details else (None, None)
 
 
 # --- Manager Ratings Section (Conditionally Displayed) ---
-st.markdown("<h2 style='text-align: center;'>Manager Ratings</h2>", unsafe_allow_html=True)
-
-if user_role == 'employee' and managed_by and managed_by != 'XYZ':
-    # Fetch ratings separately
-    cursor.execute("""
-        SELECT rater, role, criteria, score, timestamp
-        FROM user_ratings
-        WHERE ratee = %s AND rating_type = 'manager'
-        ORDER BY timestamp DESC
-    """, (employee,))
-    manager_ratings = cursor.fetchall()
-
-    # Fetch remark separately
-    cursor.execute("""
-        SELECT remark FROM remarks
-        WHERE ratee = %s AND rating_type = 'manager'
-        LIMIT 1
-    """, (employee,))
-    manager_remark_result = cursor.fetchone()
-    manager_remark = manager_remark_result[0] if manager_remark_result else None
-
-    if manager_ratings:
-        ratings_by_criteria = {
-            crit: (score, timestamp, rater, r_role)
-            for rater, r_role, crit, score, timestamp in manager_ratings
-        }
-
-        col1, col2 = st.columns(2)
-
-        # Display Development and Foundational in the first column
-        with col1:
-            st.markdown("### Development (70%)")
-            for crit, _ in development_criteria:
-                if crit in ratings_by_criteria:
-                    score, timestamp, rater, r_role = ratings_by_criteria[crit]
-                    st.write(f"""
-                        <div class='rating-card'>
-                            <b>{crit}</b>: <span class='rating-score'>{score}/10</span><br>
-                            <small>by <b>{rater}</b> on {timestamp.strftime('%Y-%m-%d')}</small>
-                        </div>
-                    """, unsafe_allow_html=True)
-
-            st.markdown("### Foundational Progress")
-            for crit, _ in foundational_criteria:
-                if crit in ratings_by_criteria:
-                    score, timestamp, rater, r_role = ratings_by_criteria[crit]
-                    st.write(f"""
-                        <div class='rating-card'>
-                            <b>{crit}</b>: <span class='rating-score'>{score}/10</span><br>
-                            <small>by <b>{rater}</b> on {timestamp.strftime('%Y-%m-%d')}</small>
-                        </div>
-                    """, unsafe_allow_html=True)
-
-        # Display Other Aspects and Futuristic in the second column
-        with col2:
-            st.markdown("### Other Aspects (30%)")
-            for crit, _ in other_aspects_criteria:
-                if crit in ratings_by_criteria:
-                    score, timestamp, rater, r_role = ratings_by_criteria[crit]
-                    st.write(f"""
-                        <div class='rating-card'>
-                            <b>{crit}</b>: <span class='rating-score'>{score}/10</span><br>
-                            <small>by <b>{rater}</b> on {timestamp.strftime('%Y-%m-%d')}</small>
-                        </div>
-                    """, unsafe_allow_html=True)
-
-            st.markdown("### Futuristic Progress")
-            for crit, _ in futuristic_criteria:
-                if crit in ratings_by_criteria:
-                    score, timestamp, rater, r_role = ratings_by_criteria[crit]
-                    st.write(f"""
-                        <div class='rating-card'>
-                            <b>{crit}</b>: <span class='rating-score'>{score}/10</span><br>
-                            <small>by <b>{rater}</b> on {timestamp.strftime('%Y-%m-%d')}</small>
-                        </div>
-                    """, unsafe_allow_html=True)
-        
-        # Display the remark after the ratings
-        if manager_remark:
-            st.divider()
-            st.markdown("### Manager's Remark")
-            st.markdown(f"<div class='rating-card'>{manager_remark}</div>", unsafe_allow_html=True)
-
-    else:
-        st.info("No manager ratings have been submitted yet.")
-
-    # This handles the case where a remark exists but no ratings were submitted
-    if not manager_ratings and manager_remark:
-        st.markdown("### Manager's Remark")
-        st.markdown(f"<div class='rating-card'>{manager_remark}</div>", unsafe_allow_html=True)
-
-else:
-    st.info("This user does not have a manager assigned.")
-
-st.divider()
-
-# --- Self Ratings Section (No changes needed here) ---
-with st.container():
+with col1:
     st.markdown("<h2 style='text-align: center;'>Self Ratings</h2>", unsafe_allow_html=True)
     cursor.execute("""
         SELECT criteria, score, timestamp FROM user_ratings
@@ -187,56 +92,140 @@ with st.container():
     self_ratings = cursor.fetchall()
 
     if self_ratings:
-        ratings_by_criteria = {crit: (score, ts) for crit, score, ts in self_ratings}
+        submission_date = self_ratings[0][2]
+        st.write(f"**Submitted on:** {submission_date.strftime('%B %d, %Y')}")
         
-        col1, col2 = st.columns(2)
+        ratings_by_criteria = {crit: (score, ts) for crit, score, ts in self_ratings}
 
-        # Display Development and Foundational in the first column
-        with col1:
+        st.markdown("### Development (70%)")
+        for crit, _ in development_criteria:
+            if crit in ratings_by_criteria:
+                score, timestamp = ratings_by_criteria[crit]
+                st.markdown(f"""
+                    <div class='rating-card'>
+                        <b>{crit}</b>: <span class='rating-score'>{score}/10</span>
+                    </div>
+                """, unsafe_allow_html=True)
+
+        st.markdown("### Foundational Progress")
+        for crit, _ in foundational_criteria:
+            if crit in ratings_by_criteria:
+                score, timestamp = ratings_by_criteria[crit]
+                st.markdown(f"""
+                    <div class='rating-card'>
+                        <b>{crit}</b>: <span class='rating-score'>{score}/10</span>
+                    </div>
+                """, unsafe_allow_html=True)
+
+        st.markdown("### Other Aspects (30%)")
+        for crit, _ in other_aspects_criteria:
+            if crit in ratings_by_criteria:
+                score, timestamp = ratings_by_criteria[crit]
+                st.markdown(f"""
+                    <div class='rating-card'>
+                        <b>{crit}</b>: <span class='rating-score'>{score}/10</span>
+                    </div>
+                """, unsafe_allow_html=True)
+
+        st.markdown("### Futuristic Progress")
+        for crit, _ in futuristic_criteria:
+            if crit in ratings_by_criteria:
+                score, timestamp = ratings_by_criteria[crit]
+                st.markdown(f"""
+                    <div class='rating-card'>
+                        <b>{crit}</b>: <span class='rating-score'>{score}/10</span>
+                    </div>
+                """, unsafe_allow_html=True)
+    else:
+        st.info("No self ratings submitted yet.")
+
+# --- Self Ratings Section (No changes needed here) ---
+with col2:
+    st.markdown("<h2 style='text-align: center;'>Manager Ratings</h2>", unsafe_allow_html=True)
+
+    if user_role == 'employee' and managed_by and managed_by != 'XYZ':
+        # Fetch ratings separately
+        cursor.execute("""
+            SELECT rater, role, criteria, score, timestamp
+            FROM user_ratings
+            WHERE ratee = %s AND rating_type = 'manager'
+            ORDER BY timestamp DESC
+        """, (employee,))
+        manager_ratings = cursor.fetchall()
+
+        # Fetch remark separately
+        cursor.execute("""
+            SELECT remark FROM remarks
+            WHERE ratee = %s AND rating_type = 'manager'
+            LIMIT 1
+        """, (employee,))
+        manager_remark_result = cursor.fetchone()
+        manager_remark = manager_remark_result[0] if manager_remark_result else None
+
+        if manager_ratings:
+
+            rater_name = manager_ratings[0][0]
+            submission_date = manager_ratings[0][4]
+            st.write(f"**Submitted by:** {rater_name} on {submission_date.strftime('%B %d, %Y')}")
+
+            ratings_by_criteria = {
+                crit: (score, timestamp, rater, r_role)
+                for rater, r_role, crit, score, timestamp in manager_ratings
+            }
+
             st.markdown("### Development (70%)")
             for crit, _ in development_criteria:
                 if crit in ratings_by_criteria:
-                    score, timestamp = ratings_by_criteria[crit]
-                    st.markdown(f"""
+                    score, timestamp, rater, r_role = ratings_by_criteria[crit]
+                    st.write(f"""
                         <div class='rating-card'>
-                            <b>{crit}</b>: <span class='rating-score'>{score}/10</span><br>
-                            <small>submitted on {timestamp.strftime('%Y-%m-%d')}</small>
+                            <b>{crit}</b>: <span class='rating-score'>{score}/10</span>
                         </div>
                     """, unsafe_allow_html=True)
 
             st.markdown("### Foundational Progress")
             for crit, _ in foundational_criteria:
                 if crit in ratings_by_criteria:
-                    score, timestamp = ratings_by_criteria[crit]
-                    st.markdown(f"""
+                    score, timestamp, rater, r_role = ratings_by_criteria[crit]
+                    st.write(f"""
                         <div class='rating-card'>
-                            <b>{crit}</b>: <span class='rating-score'>{score}/10</span><br>
-                            <small>submitted on {timestamp.strftime('%Y-%m-%d')}</small>
+                            <b>{crit}</b>: <span class='rating-score'>{score}/10</span>
                         </div>
                     """, unsafe_allow_html=True)
 
-        # Display Other Aspects and Futuristic in the second column
-        with col2:
             st.markdown("### Other Aspects (30%)")
             for crit, _ in other_aspects_criteria:
                 if crit in ratings_by_criteria:
-                    score, timestamp = ratings_by_criteria[crit]
-                    st.markdown(f"""
+                    score, timestamp, rater, r_role = ratings_by_criteria[crit]
+                    st.write(f"""
                         <div class='rating-card'>
-                            <b>{crit}</b>: <span class='rating-score'>{score}/10</span><br>
-                            <small>submitted on {timestamp.strftime('%Y-%m-%d')}</small>
+                            <b>{crit}</b>: <span class='rating-score'>{score}/10</span>
                         </div>
                     """, unsafe_allow_html=True)
 
             st.markdown("### Futuristic Progress")
             for crit, _ in futuristic_criteria:
                 if crit in ratings_by_criteria:
-                    score, timestamp = ratings_by_criteria[crit]
-                    st.markdown(f"""
+                    score, timestamp, rater, r_role = ratings_by_criteria[crit]
+                    st.write(f"""
                         <div class='rating-card'>
-                            <b>{crit}</b>: <span class='rating-score'>{score}/10</span><br>
-                            <small>submitted on {timestamp.strftime('%Y-%m-%d')}</small>
+                            <b>{crit}</b>: <span class='rating-score'>{score}/10</span>
                         </div>
                     """, unsafe_allow_html=True)
+            
+            # Display the remark after the ratings
+            if manager_remark:
+                st.divider()
+                st.markdown("### Manager's Remark")
+                st.markdown(f"<div class='rating-card'>{manager_remark}</div>", unsafe_allow_html=True)
+
+        else:
+            st.info("No manager ratings have been submitted yet.")
+
+        # This handles the case where a remark exists but no ratings were submitted
+        if not manager_ratings and manager_remark:
+            st.markdown("### Manager's Remark")
+            st.markdown(f"<div class='rating-card'>{manager_remark}</div>", unsafe_allow_html=True)
+
     else:
-        st.info("No self ratings submitted yet.")
+        st.info("This user does not have a manager assigned.")
