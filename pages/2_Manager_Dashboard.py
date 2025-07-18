@@ -84,7 +84,7 @@ st.subheader("Evaluate Your Team Members")
 cursor.execute("SELECT username FROM users WHERE managed_by = %s", (name,))
 employees = cursor.fetchall()
 # --- PAGINATION LOGIC FOR EMPLOYEE LIST ---
-EMPLOYEES_PER_PAGE = 4  # Adjust as needed
+EMPLOYEES_PER_PAGE = 6  # Adjust as needed
 
 if employees:
     total_employees = len(employees)
@@ -154,25 +154,30 @@ if employees:
 
                 if all_criteria_names.issubset(manager_submitted_criteria):
                     st.info(f"You have already submitted a rating for {employee_name} (Quarter {selected_emp_quarter}). Here is a summary:")
+                    if manager_ratings:
+                        # Get the timestamp from the first record
+                        submission_date = manager_ratings[0][2]
+                        st.write(f"**Submitted on:** {submission_date.strftime('%B %d, %Y')}")
+
                     col1, col2 = st.columns(2)
                     with col1:
                         st.markdown("<h5>Development (70%)</h5>", unsafe_allow_html=True)
                         for crit, _ in development_criteria:
                             score, timestamp = next((s, t) for c, s, t in manager_ratings if c == crit)
-                            st.markdown(f"**{crit}**: {score}/10 <small>(on {timestamp.strftime('%Y-%m-%d')})</small>", unsafe_allow_html=True)
+                            st.markdown(f"**{crit}**: {score}/10", unsafe_allow_html=True)
                         st.markdown("<h5>Foundational Progress</h5>", unsafe_allow_html=True)
                         for crit, _ in foundational_criteria:
                             score, timestamp = next((s, t) for c, s, t in manager_ratings if c == crit)
-                            st.markdown(f"**{crit}**: {score}/10 <small>(on {timestamp.strftime('%Y-%m-%d')})</small>", unsafe_allow_html=True)
+                            st.markdown(f"**{crit}**: {score}/10", unsafe_allow_html=True)
                     with col2:
                         st.markdown("<h5>Other Aspects (30%)</h5>", unsafe_allow_html=True)
                         for crit, _ in other_aspects_criteria:
                             score, timestamp = next((s, t) for c, s, t in manager_ratings if c == crit)
-                            st.markdown(f"**{crit}**: {score}/10 <small>(on {timestamp.strftime('%Y-%m-%d')})</small>", unsafe_allow_html=True)
+                            st.markdown(f"**{crit}**: {score}/10", unsafe_allow_html=True)
                         st.markdown("<h5>Futuristic Progress</h5>", unsafe_allow_html=True)
                         for crit, _ in futuristic_criteria:
                             score, timestamp = next((s, t) for c, s, t in manager_ratings if c == crit)
-                            st.markdown(f"**{crit}**: {score}/10 <small>(on {timestamp.strftime('%Y-%m-%d')})</small>", unsafe_allow_html=True)
+                            st.markdown(f"**{crit}**: {score}/10", unsafe_allow_html=True)
                     st.divider()
                     cursor.execute("SELECT remark FROM remarks WHERE rater = %s AND ratee = %s AND rating_type = 'manager' AND quarter = %s;", (name, employee_name, selected_emp_quarter))
                     feedback = cursor.fetchone()
@@ -307,6 +312,10 @@ with st.expander("Open Self-Evaluation Form", expanded=False):
     if set(all_criteria).issubset(submitted_criteria):
         st.info(f"You have already submitted your self-rating for Quarter {selected_quarter}. Here is a summary:")
 
+        if self_ratings:
+            submission_date = self_ratings[0][2]
+            st.write(f"**Submitted on:** {submission_date.strftime('%B %d, %Y')}")
+
         # Create columns for the summary view
         col1, col2 = st.columns(2)
 
@@ -314,23 +323,23 @@ with st.expander("Open Self-Evaluation Form", expanded=False):
             st.markdown("### Development (70%)")
             for crit, _ in development_criteria:
                 score, timestamp = next((s, t) for c, s, t in self_ratings if c == crit)
-                st.markdown(f"**{crit}**: {score}/10  <small>(on {timestamp.strftime('%Y-%m-%d')})</small>", unsafe_allow_html=True)
+                st.markdown(f"**{crit}**: {score}/10", unsafe_allow_html=True)
 
             st.markdown("### Foundational Progress")
             for crit, _ in foundational_criteria:
                 score, timestamp = next((s, t) for c, s, t in self_ratings if c == crit)
-                st.markdown(f"**{crit}**: {score}/10  <small>(on {timestamp.strftime('%Y-%m-%d')})</small>", unsafe_allow_html=True)
+                st.markdown(f"**{crit}**: {score}/10", unsafe_allow_html=True)
 
         with col2:
             st.markdown("### Other Aspects (30%)")
             for crit, _ in other_aspects_criteria:
                 score, timestamp = next((s, t) for c, s, t in self_ratings if c == crit)
-                st.markdown(f"**{crit}**: {score}/10  <small>(on {timestamp.strftime('%Y-%m-%d')})</small>", unsafe_allow_html=True)
+                st.markdown(f"**{crit}**: {score}/10", unsafe_allow_html=True)
 
             st.markdown("### Futuristic Progress")
             for crit, _ in futuristic_criteria:
                 score, timestamp = next((s, t) for c, s, t in self_ratings if c == crit)
-                st.markdown(f"**{crit}**: {score}/10  <small>(on {timestamp.strftime('%Y-%m-%d')})</small>", unsafe_allow_html=True)
+                st.markdown(f"**{crit}**: {score}/10", unsafe_allow_html=True)
 
         st.write("---")
         # Fetch self remark for the selected quarter
