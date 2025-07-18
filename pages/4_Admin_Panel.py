@@ -29,25 +29,40 @@ name = st.session_state['name']
 role = st.session_state['role']
 cursor = db.cursor()
 
-# --- ADMIN PANEL UI ---
-st.title("Admin Control Panel ⚙️")
-st.write(f"<center><h2>Welcome, Admin {name}!</h2></center>", unsafe_allow_html=True)
-st.write("---")
+with st.sidebar:
+    st.title("Admin Panel ⚙️")
+    st.write(f"Welcome, **{name}**")
+    st.divider()
+    
+    # Use session state to keep track of the selected page
+    if "admin_page" not in st.session_state:
+        st.session_state.admin_page = "User Management"
 
-tab1, tab2 = st.tabs(["User & Team Management", "Evaluation Status Dashboard"])
+    # Buttons to switch pages
+    if st.button("👤 User & Team Management", use_container_width=True, type="primary" if st.session_state.admin_page == "User Management" else "secondary"):
+        st.session_state.admin_page = "User Management"
+        st.rerun()
+        
+    if st.button("📊 Evaluation Status Dashboard", use_container_width=True, type="primary" if st.session_state.admin_page == "Evaluation Dashboard" else "secondary"):
+        st.session_state.admin_page = "Evaluation Dashboard"
+        st.rerun()
+    
+    # MERGED: Logout logic uses your centralized function for consistency.
+    render_logout_button()
 
-with tab1:
+# --- PAGE CONTENT BASED ON SIDEBAR SELECTION ---
+
+# --- USER MANAGEMENT PAGE ---
+if st.session_state.admin_page == "User Management":
     st.header("Manage User Accounts and Teams")
-    # The user management logic from your original Admin.py goes here.
-    # This includes the selectbox for Create/Delete/Edit actions and the forms for each.
-    # ...
-    # (The full user management code from your old Admin.py is assumed here)
-    # ...
+    
+    # FROM YOUR CODE: Using your well-structured selectbox and logic for Create/Edit/Delete.
     option = st.selectbox(
-    "Select an action",
-    ("Create Employee/Manager", "Delete Employee/Manager", "Edit Employee/Manager")
+        "Select an action",
+        ("Create Employee/Manager", "Delete Employee/Manager", "Edit Employee/Manager")
     )
-    st.write("---")
+    st.divider()
+
     if option == "Create Employee/Manager":
         st.subheader("Create New Employee/Manager")
 
@@ -170,33 +185,44 @@ with tab1:
         else:
             user_to_delete = st.selectbox("Select user to delete", users)
 
+            # This is the NEW code for the Delete button's "if" statement
             if st.button("Delete", type="primary"):
-                # Extract username and role from the selected string
                 username = user_to_delete.split(" (")[0]
                 role = user_to_delete.split("(")[-1].replace(")", "").strip().lower()
 
-                # --- NEW LOGIC ---
-                # First, check if the user is a manager
+                # --- 1. Safety Check for Managers ---
                 if role == 'manager':
-                    # If they are a manager, check if they have any employees
                     cursor.execute("SELECT COUNT(*) FROM users WHERE managed_by = %s", (username,))
-                    employee_count = cursor.fetchone()[0]
-                    
+                    # Assuming your cursor is not a dictionary cursor here
+                    employee_count = cursor.fetchone()[0] 
                     if employee_count > 0:
-                        # If they have employees, block the deletion and show an error
-                        st.error(f"Cannot delete '{username}'. They still manage {employee_count} employee(s). Please edit and reassign their employees to another manager first.")
-                    else:
-                        # If they have no employees, it's safe to delete them
-                        cursor.execute("DELETE FROM users WHERE username = %s", (username,))
-                        db.commit()
-                        st.success(f"Manager '{username}' has been deleted successfully.")
-                        st.rerun()
-                else:
-                    # If the user is an employee, it's safe to delete them directly
-                    cursor.execute("DELETE FROM users WHERE username = %s", (username,)) #
-                    db.commit()
-                    st.success(f"Employee '{username}' has been deleted successfully.")
-                    st.rerun()
+                        st.error(f"Cannot delete '{username}'. They still manage {employee_count} employee(s). Please reassign them first.")
+                        st.stop() # Stop execution
+
+                # --- 2. Fetch User's Email BEFORE Deletion ---
+                # We need this to clean up the login_attempts table.
+                cursor.execute("SELECT email FROM users WHERE username = %s", (username,))
+                user_email_result = cursor.fetchone()
+                user_email = user_email_result[0] if user_email_result else None
+
+                # --- 3. Perform Cascading Deletes from All Related Tables ---
+                st.write(f"Deleting all records for **{username}**...")
+
+                cursor.execute("DELETE FROM user_ratings WHERE rater = %s OR ratee = %s", (username, username))
+                cursor.execute("DELETE FROM remarks WHERE rater = %s OR ratee = %s", (username, username))
+                cursor.execute("DELETE FROM notifications WHERE sender = %s OR recipient = %s", (username, username))
+
+                # Delete login attempts for this user's email
+                if user_email:
+                    cursor.execute("DELETE FROM login_attempts WHERE email = %s", (user_email,))
+
+                # --- 4. Final Step: Delete the User from the 'users' Table ---
+                cursor.execute("DELETE FROM users WHERE username = %s", (username,))
+
+                # --- 5. Commit the Transaction and Show Confirmation ---
+                db.commit()
+                st.success(f"User '{username}' and all their associated data have been permanently deleted.")
+                st.rerun()
 
     elif option == "Edit Employee/Manager":
         st.subheader("Edit Employee/Manager Details")
@@ -376,12 +402,14 @@ with tab1:
                             st.rerun() # Refresh the page to show updated info
                         else:
                             st.info("No changes were made.")
-with tab2:
-
-    # CHECKLIST-CODE-STARTS-HERE
-    st.markdown("---")
-    # --- EVALUATION STATUS CHECKLIST ---
-    st.markdown("## 📊 Evaluation Status Dashboard")
+                            
+# --- EVALUATION DASHBOARD PAGE ---
+elif st.session_state.admin_page == "Evaluation Dashboard":
+    st.header("Evaluation Status Dashboard")
+    
+    # FROM HIS CODE: This dashboard logic is more detailed and robust.
+    # It correctly calculates completion status against a total count.
+    TOTAL_CRITERIA_COUNT = len(all_criteria_names)
 
     # Custom CSS for the checklist
     st.markdown("""
@@ -557,6 +585,3 @@ with tab2:
                     """, unsafe_allow_html=True)
 
         st.markdown('</div>', unsafe_allow_html=True)
-
-
-render_logout_button()
