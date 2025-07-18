@@ -63,35 +63,37 @@ with st.expander("👔 Manager Remarks", expanded=False):
 
     if manager_ratings:
         ratings_by_criteria = {r[2]: (r[3], r[5], r[0], r[1]) for r in manager_ratings}
-        
+
+        rater_name = manager_ratings[0][0]
+        submission_date = manager_ratings[0][5]
+        st.write(f"**Submitted by:** {rater_name} on {submission_date.strftime('%B %d, %Y')}")
         col1, col2 = st.columns(2)
         
-        # --- THIS IS THE MISSING DISPLAY LOGIC ---
         with col1:
             st.markdown("<h3>Development (70%)</h3>", unsafe_allow_html=True)
             for crit in development_criteria:
                 if crit in ratings_by_criteria:
                     score, timestamp, rater, r_role = ratings_by_criteria[crit]
-                    st.markdown(f"**{crit}**: {score}/10 <small>({timestamp.strftime('%Y-%m-%d')})</small>", unsafe_allow_html=True)
+                    st.markdown(f"**{crit}**: {score}/10", unsafe_allow_html=True)
             
             st.markdown("<h3>Foundational Progress</h3>", unsafe_allow_html=True)
             for crit in foundational_criteria:
                 if crit in ratings_by_criteria:
                     score, timestamp, rater, r_role = ratings_by_criteria[crit]
-                    st.markdown(f"**{crit}**: {score}/10 <small>({timestamp.strftime('%Y-%m-%d')})</small>", unsafe_allow_html=True)
+                    st.markdown(f"**{crit}**: {score}/10", unsafe_allow_html=True)
 
         with col2:
             st.markdown("<h3>Other Aspects (30%)</h3>", unsafe_allow_html=True)
             for crit in other_aspects_criteria:
                 if crit in ratings_by_criteria:
                     score, timestamp, rater, r_role = ratings_by_criteria[crit]
-                    st.markdown(f"**{crit}**: {score}/10 <small>({timestamp.strftime('%Y-%m-%d')})</small>", unsafe_allow_html=True)
+                    st.markdown(f"**{crit}**: {score}/10", unsafe_allow_html=True)
 
             st.markdown("<h3>Futuristic Progress</h3>", unsafe_allow_html=True)
             for crit in futuristic_criteria:
                 if crit in ratings_by_criteria:
                     score, timestamp, rater, r_role = ratings_by_criteria[crit]
-                    st.markdown(f"**{crit}**: {score}/10 <small>({timestamp.strftime('%Y-%m-%d')})</small>", unsafe_allow_html=True)
+                    st.markdown(f"**{crit}**: {score}/10", unsafe_allow_html=True)
         # --- END OF MISSING LOGIC ---
         
         st.divider()
@@ -156,7 +158,13 @@ with st.expander("Open Self-Evaluation Form", expanded=False):
     
     if set(all_criteria).issubset(submitted_criteria):
         st.info("You have already submitted your self-rating.")
-        
+
+        # ADD THIS BLOCK to show the date once
+        if self_ratings:
+            # Get the timestamp from the first record (they should all be the same)
+            submission_date = self_ratings[0][2]
+            st.write(f"**Submitted on:** {submission_date.strftime('%B %d, %Y')}")
+
         # Create columns for the summary view
         col1, col2 = st.columns(2)
         
@@ -164,23 +172,23 @@ with st.expander("Open Self-Evaluation Form", expanded=False):
             st.markdown("### Development (70%)")
             for crit, _ in development_criteria:
                 score, timestamp = next((s, t) for c, s, t in self_ratings if c == crit)
-                st.markdown(f"**{crit}**: {score}/10  <small>(on {timestamp.strftime('%Y-%m-%d')})</small>", unsafe_allow_html=True)
+                st.markdown(f"**{crit}**: {score}/10", unsafe_allow_html=True)
             
             st.markdown("### Foundational Progress")
             for crit, _ in foundational_criteria:
                 score, timestamp = next((s, t) for c, s, t in self_ratings if c == crit)
-                st.markdown(f"**{crit}**: {score}/10  <small>(on {timestamp.strftime('%Y-%m-%d')})</small>", unsafe_allow_html=True)
+                st.markdown(f"**{crit}**: {score}/10", unsafe_allow_html=True)
         
         with col2:
             st.markdown("### Other Aspects (30%)")
             for crit, _ in other_aspects_criteria:
                 score, timestamp = next((s, t) for c, s, t in self_ratings if c == crit)
-                st.markdown(f"**{crit}**: {score}/10  <small>(on {timestamp.strftime('%Y-%m-%d')})</small>", unsafe_allow_html=True)
+                st.markdown(f"**{crit}**: {score}/10", unsafe_allow_html=True)
 
             st.markdown("### Futuristic Progress")
             for crit, _ in futuristic_criteria:
                 score, timestamp = next((s, t) for c, s, t in self_ratings if c == crit)
-                st.markdown(f"**{crit}**: {score}/10  <small>(on {timestamp.strftime('%Y-%m-%d')})</small>", unsafe_allow_html=True)
+                st.markdown(f"**{crit}**: {score}/10", unsafe_allow_html=True)
 
     else:
         # Dictionary to hold all scores
