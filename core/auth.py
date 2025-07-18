@@ -86,3 +86,4 @@ def render_logout_button():
         st.session_state.clear()
         st.query_params.clear()
         st.switch_page("Home.py")
+        st.rerun()
