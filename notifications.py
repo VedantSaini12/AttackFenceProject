@@ -5,6 +5,10 @@ from datetime import datetime
 from typing import List, Dict, Any
 from core.auth import get_db_connection
 
+# Note: Using st.session_state to hold the db connection is often more robust
+# in complex apps than @st.cache_resource for short-lived connections.
+
+
 def create_notifications_table():
     """Create notifications table if it doesn't exist"""
     db = get_db_connection()
