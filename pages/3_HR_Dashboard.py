@@ -7,14 +7,6 @@ from notifications import notification_bell_component, add_notification
 from validators import validate_password, validate_email, ALLOWED_DOMAINS
 from utils import generate_random_password
 from core.auth import protect_page, render_logout_button, get_db_connection, get_token_store
-from core.constants import (
-    foundational_criteria,
-    futuristic_criteria,
-    development_criteria,
-    other_aspects_criteria,
-    all_criteria_names
-)
-
 
 # --- PAGE CONFIGURATION ---
 st.set_page_config(page_title="HR Dashboard", page_icon="📋", layout="wide")
