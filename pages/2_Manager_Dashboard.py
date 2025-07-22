@@ -81,7 +81,7 @@ st.write("<br>", unsafe_allow_html=True)
 
 # Section for managers to rate their employees
 st.subheader("Evaluate Your Team Members")
-cursor.execute("SELECT username FROM users WHERE managed_by = %s", (name,))
+cursor.execute("SELECT username, email FROM users WHERE managed_by = %s", (name,))
 employees = cursor.fetchall()
 # --- PAGINATION LOGIC FOR EMPLOYEE LIST ---
 EMPLOYEES_PER_PAGE = 6  # Adjust as needed
@@ -106,9 +106,9 @@ if employees:
     # --- Quarterly System Implementation for Employees ---
     now = datetime.datetime.now()
     quarter = (now.month - 1) // 3 + 1
-    for emp in paginated_employees:
-        employee_name = emp[0]
+    for emp_name, emp_email in paginated_employees: 
 
+        employee_name = emp_name
         # Check if employee has completed self-evaluation for the selected quarter
         cursor.execute("""
             SELECT criteria FROM user_ratings 
@@ -139,7 +139,8 @@ if employees:
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
-            if st.button("Show reports", key=f"show_reports_{employee_name}"):
+            # Use the unique email for the key, but still pass the name to the next page
+            if st.button("Show reports", key=f"show_reports_{emp_email}"):
                 st.session_state.selected_employee = employee_name
                 st.switch_page("pages/Rating.py")
 else:
