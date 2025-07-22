@@ -12,7 +12,7 @@ def get_db_connection():
         return connector.connect(
             host="localhost",
             user="root",
-            password="sqladi@2710",
+            password="password",
             database="auth"
         )
     except connector.Error as e:
