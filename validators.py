@@ -30,3 +30,15 @@ def validate_password(password: str) -> list:
         errors.append("Password must contain at least one number.")
 
     return errors
+
+def validate_name(name: str) -> bool:
+    """
+    Validates that a name contains only letters and spaces,
+    and is not empty or just whitespace.
+    """
+    name = name.strip()
+    if not name:
+        return False
+        
+    # Check that all characters are either letters or spaces
+    return all(c.isalpha() or c.isspace() for c in name)
