@@ -23,7 +23,7 @@ name = st.session_state["name"]
 role = st.session_state["role"]
 cursor = db.cursor(buffered=True)
 
-notification_bell_component(st.session_state.name)
+notification_bell_component()
 
 # --- SIDEBAR NAVIGATION ---
 
