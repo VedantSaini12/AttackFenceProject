@@ -23,7 +23,7 @@ cursor = db.cursor(buffered=True)
 
 # --- END OF THE NEW SECURE AUTHENTICATION GUARD ---
 
-notification_bell_component(st.session_state.name)
+notification_bell_component()
 
 if "hr_section" not in st.session_state:
     st.session_state.hr_section = "Add Employee"
