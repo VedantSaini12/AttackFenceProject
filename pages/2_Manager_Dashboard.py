@@ -179,26 +179,27 @@ if st.session_state.mgr_section == "Evaluate Team":
                 if st.button("Show reports", key=f"show_reports_{emp_email}"):
                     st.session_state.selected_employee_email  = emp_email
                     st.switch_page("pages/Rating.py")
+
+        # --- PAGINATION BUTTONS ---
+        st.write("---")
+        pg_col1, pg_col2, pg_col3 = st.columns([1, 2, 1])
+    
+        with pg_col1:
+            if st.button("⬅️ Previous", use_container_width=True, disabled=(st.session_state.emp_page <= 0)):
+                st.session_state.emp_page -= 1
+                st.rerun()
+    
+        with pg_col2:
+            st.markdown(f"<p style='text-align: center; font-weight: bold;'>Page {st.session_state.emp_page + 1} of {total_pages}</p>", unsafe_allow_html=True)
+    
+        with pg_col3:
+            if st.button("Next ➡️", use_container_width=True, disabled=(st.session_state.emp_page >= max_page)):
+                st.session_state.emp_page += 1
+                st.rerun()
+            # --- END OF PAGINATION BLOCK ---
+    
     else:
         st.info("You do not currently manage any employees.")
-
-    # --- PAGINATION BUTTONS ---
-    st.write("---")
-    pg_col1, pg_col2, pg_col3 = st.columns([1, 2, 1])
-
-    with pg_col1:
-        if st.button("⬅️ Previous", use_container_width=True, disabled=(st.session_state.emp_page <= 0)):
-            st.session_state.emp_page -= 1
-            st.rerun()
-
-    with pg_col2:
-        st.markdown(f"<p style='text-align: center; font-weight: bold;'>Page {st.session_state.emp_page + 1} of {total_pages}</p>", unsafe_allow_html=True)
-
-    with pg_col3:
-        if st.button("Next ➡️", use_container_width=True, disabled=(st.session_state.emp_page >= max_page)):
-            st.session_state.emp_page += 1
-            st.rerun()
-        # --- END OF PAGINATION BLOCK ---
 
 # Manager self-rating form
 elif st.session_state.mgr_section == "Self-Evaluation":
