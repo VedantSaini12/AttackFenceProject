@@ -12,7 +12,7 @@ def get_db_connection():
         return connector.connect(
             host="localhost",
             user="root",
-            password="password",
+            password="sqladi@2710",
             database="auth"
         )
     except connector.Error as e:
@@ -36,6 +36,7 @@ def protect_page(allowed_roles: list):
                 if datetime.datetime.now() - token_data['timestamp'] < datetime.timedelta(hours=24):
                     st.session_state["name"] = token_data['username']
                     st.session_state["role"] = token_data['role']
+                    st.session_state["email"] = token_data['email'] # <-- THE MISSING LINE
                     st.session_state["token"] = token
                     st.rerun()
                 else:
