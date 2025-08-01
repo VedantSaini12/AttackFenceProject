@@ -14,22 +14,53 @@ from core.constants import (
 # Page Config
 st.set_page_config(page_title="Evaluation Report", layout="wide")
 
-protect_page(allowed_roles=["HR", "manager", "admin"])
+protect_page(allowed_roles=["hr", "manager", "admin", "super_manager"])
 
 db = get_db_connection()
 token_store = get_token_store()
 
 # Define session variables for easy use in the rest of the page
 name = st.session_state["name"]
+email = st.session_state["email"]
 role = st.session_state["role"]
 cursor = db.cursor(buffered=True)
 
 # --- END OF THE NEW SECURE AUTHENTICATION GUARD ---
     
+# --- Session check for selected employee ---
+# This check now runs AFTER the main authentication check.
+employee_email = st.session_state.get("selected_employee_email")
+if not employee_email:
+    st.error("No employee selected. Please return to your dashboard to select an employee.")
+    if st.button("Go to My Dashboard"):
+        role = st.session_state.get("role")
+        if role == 'hr':
+            st.switch_page("pages/3_HR_Dashboard.py")
+        elif role == 'admin':
+            st.switch_page("pages/4_Admin_Panel.py")
+        elif role == 'manager':
+            st.switch_page("pages/2_Manager_Dashboard.py")
+        else:
+            st.switch_page("Home.py")
+    st.stop()
+
+# Fetch user's name, role, and manager details using their EMAIL
+cursor.execute("SELECT username, role, managed_by FROM users WHERE email=%s", (employee_email,))
+user_details = cursor.fetchone()
+
+# Check if user was found
+if not user_details:
+    st.error("Could not find details for the selected employee.")
+    st.stop()
+
+# Unpack the details for use on the rest of the page
+employee_name, user_role, managed_by = user_details
+st.title(f"Evaluation Report for: {employee_name}")
+
 # --- BACK BUTTON ---
 if st.button("←"):
     role = st.session_state.get("role")
-    if role == 'HR':
+    if role == 'hr':
         st.switch_page("pages/3_HR_Dashboard.py")
     elif role == 'admin':
         st.switch_page("pages/4_Admin_Panel.py")
@@ -72,29 +103,6 @@ selected_quarter = st.selectbox(
 
 col1, col2 = st.columns(2)
 
-# --- Session check for selected employee ---
-# This check now runs AFTER the main authentication check.
-employee = st.session_state.get("selected_employee")
-if not employee:
-    st.error("No employee selected. Please return to your dashboard to select an employee.")
-    if st.button("Go to My Dashboard"):
-        role = st.session_state.get("role")
-        if role == 'HR':
-            st.switch_page("pages/3_HR_Dashboard.py")
-        elif role == 'admin':
-            st.switch_page("pages/4_Admin_Panel.py")
-        # Add other roles if they can access this page
-        else:
-            # Default fallback
-            st.switch_page("Home.py")
-    st.stop()
-
-# Fetch user's role and manager details
-cursor.execute("SELECT role, managed_by FROM users WHERE username=%s", (employee,))
-user_details = cursor.fetchone()
-user_role, managed_by = user_details if user_details else (None, None)
-
-
 # --- Manager Ratings Section (Conditionally Displayed) ---
 with col1:
     st.markdown("<h2 style='text-align: center;'>Self Ratings</h2>", unsafe_allow_html=True)
@@ -102,7 +110,7 @@ with col1:
         SELECT criteria, score, timestamp FROM user_ratings
         WHERE ratee = %s AND rating_type = 'self' AND quarter = %s
         ORDER BY timestamp DESC
-    """, (employee, selected_quarter))
+    """, (employee_email, selected_quarter))
     self_ratings = cursor.fetchall()
 
     if self_ratings:
@@ -162,14 +170,14 @@ with col2:
             SELECT rater, role, criteria, score, timestamp FROM user_ratings
             WHERE ratee = %s AND rating_type = 'manager' AND quarter = %s
             ORDER BY timestamp DESC
-        """, (employee, selected_quarter))
+        """, (employee_email, selected_quarter))
         manager_ratings = cursor.fetchall()
 
         # Fetch remark for the SELECTED quarter
         cursor.execute("""
             SELECT remark FROM remarks
             WHERE ratee = %s AND rating_type = 'manager' AND quarter = %s AND year = %s LIMIT 1
-        """, (employee, selected_quarter, datetime.datetime.now().year))
+        """, (employee_email, selected_quarter, datetime.datetime.now().year))
         manager_remark_result = cursor.fetchone()
         manager_remark = manager_remark_result[0] if manager_remark_result else None
 
@@ -217,7 +225,7 @@ with col2:
             cursor.execute("""
                 SELECT criteria FROM user_ratings
                 WHERE ratee = %s AND rating_type = 'self' AND quarter = %s
-            """, (employee, selected_quarter))
+            """, (employee_email, selected_quarter))
             employee_submitted_criteria = {row[0] for row in cursor.fetchall()}
             is_self_evaluation_complete = all_criteria_names.issubset(employee_submitted_criteria)
             tooltips = {
@@ -244,7 +252,7 @@ with col2:
             # Only show the rating form if the viewer is a manager AND the employee has finished their part
             if role == 'manager' and is_self_evaluation_complete:
                 # Fetch employee self-ratings for reference
-                cursor.execute("SELECT criteria, score FROM user_ratings WHERE rater = %s AND rating_type = 'self' AND quarter = %s", (employee, selected_quarter))
+                cursor.execute("SELECT criteria, score FROM user_ratings WHERE rater = %s AND rating_type = 'self' AND quarter = %s", (employee_email, selected_quarter))
                 employee_self_ratings = dict(cursor.fetchall())
 
                 # ADD THIS NEW BLOCK INSTEAD
@@ -311,7 +319,7 @@ with col2:
                         help=tooltip_text
                     )
 
-                remark = st.text_area("Add Overall Remark", key=f"remark_{employee}_{selected_quarter}")
+                remark = st.text_area("Add Overall Remark", key=f"remark_{employee_email}_{selected_quarter}")
 
                 if st.button(f"Submit Rating for Quarter {selected_quarter}", type="primary"):
                     current_year = datetime.datetime.now().year # The year of the evaluation submission
@@ -320,13 +328,13 @@ with col2:
                     for crit, score in all_scores.items():
                         cursor.execute(
                             "INSERT INTO user_ratings (rater, ratee, role, criteria, score, rating_type, quarter, year) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
-                            (name, employee, role, crit, score, "manager", selected_quarter, current_year)
+                            (email, employee_email, role, crit, score, "manager", selected_quarter, current_year)
                         )
                     # Insert remark if provided
                     if remark:
                         cursor.execute(
                             "INSERT INTO remarks (rater, ratee, rating_type, remark, quarter, year) VALUES (%s, %s, %s, %s, %s, %s)",
-                            (name, employee, "manager", remark, selected_quarter, current_year)
+                            (email, employee_email, "manager", remark, selected_quarter, current_year)
                         )
                     db.commit()
                     st.success("Rating submitted successfully!")
@@ -334,7 +342,7 @@ with col2:
 
             # If the employee has NOT completed their self-rating, show an error message
             else:
-                st.warning(f"Cannot proceed. {employee} has not submitted their self-evaluation for Quarter {selected_quarter} yet.")
+                st.warning(f"Cannot proceed. {employee_email} has not submitted their self-evaluation for Quarter {selected_quarter} yet.")
 
     else:
         st.info("This user does not have a manager assigned.")

@@ -3,7 +3,7 @@ import mysql.connector as connector
 import datetime
 import uuid
 from notifications import notification_bell_component, add_notification
-from core.auth import protect_page, render_logout_button, get_db_connection, get_token_store
+from core.auth import protect_page, get_db_connection, get_token_store
 from core.constants import (
     foundational_criteria,
     futuristic_criteria,
@@ -64,11 +64,12 @@ st.markdown("""
 
 # Define session variables for easy use in the rest of the page
 name = st.session_state["name"]
+email = st.session_state["email"]
 role = st.session_state["role"]
-cursor = db.cursor()
+cursor = db.cursor(buffered=True)
 
 # --- END OF THE NEW SECURE AUTHENTICATION GUARD ---
-notification_bell_component(st.session_state.name)
+notification_bell_component()
 
 if "mgr_section" not in st.session_state:
     st.session_state.mgr_section = "Evaluate Team"
@@ -116,7 +117,7 @@ if st.session_state.mgr_section == "Evaluate Team":
 
     # Section for managers to rate their employees
     st.subheader("Evaluate Your Team Members")
-    cursor.execute("SELECT username, email FROM users WHERE managed_by = %s", (name,))
+    cursor.execute("SELECT username, email FROM users WHERE managed_by = %s AND is_dormant = FALSE", (name,))
     employees = cursor.fetchall()
     # --- PAGINATION LOGIC FOR EMPLOYEE LIST ---
     EMPLOYEES_PER_PAGE = 5  # Adjust as needed
@@ -148,7 +149,7 @@ if st.session_state.mgr_section == "Evaluate Team":
             cursor.execute("""
                 SELECT criteria FROM user_ratings 
                 WHERE rater = %s AND rating_type = 'self' AND quarter = %s
-            """, (employee_name, quarter))
+            """, (emp_email, quarter))
             employee_submitted_criteria = {row[0] for row in cursor.fetchall()}
             is_self_evaluation_complete = all_criteria_names.issubset(employee_submitted_criteria)
 
@@ -176,28 +177,29 @@ if st.session_state.mgr_section == "Evaluate Team":
                     """, unsafe_allow_html=True)
                 # Use the unique email for the key, but still pass the name to the next page
                 if st.button("Show reports", key=f"show_reports_{emp_email}"):
-                    st.session_state.selected_employee = employee_name
+                    st.session_state.selected_employee_email  = emp_email
                     st.switch_page("pages/Rating.py")
+
+        # --- PAGINATION BUTTONS ---
+        st.write("---")
+        pg_col1, pg_col2, pg_col3 = st.columns([1, 2, 1])
+
+        with pg_col1:
+            if st.button("⬅️ Previous", use_container_width=True, disabled=(st.session_state.emp_page <= 0)):
+                st.session_state.emp_page -= 1
+                st.rerun()
+
+        with pg_col2:
+            st.markdown(f"<p style='text-align: center; font-weight: bold;'>Page {st.session_state.emp_page + 1} of {total_pages}</p>", unsafe_allow_html=True)
+
+        with pg_col3:
+            if st.button("Next ➡️", use_container_width=True, disabled=(st.session_state.emp_page >= max_page)):
+                st.session_state.emp_page += 1
+                st.rerun()
+            # --- END OF PAGINATION BLOCK ---
+
     else:
         st.info("You do not currently manage any employees.")
-
-    # --- PAGINATION BUTTONS ---
-    st.write("---")
-    pg_col1, pg_col2, pg_col3 = st.columns([1, 2, 1])
-
-    with pg_col1:
-        if st.button("⬅️ Previous", use_container_width=True, disabled=(st.session_state.emp_page <= 0)):
-            st.session_state.emp_page -= 1
-            st.rerun()
-
-    with pg_col2:
-        st.markdown(f"<p style='text-align: center; font-weight: bold;'>Page {st.session_state.emp_page + 1} of {total_pages}</p>", unsafe_allow_html=True)
-
-    with pg_col3:
-        if st.button("Next ➡️", use_container_width=True, disabled=(st.session_state.emp_page >= max_page)):
-            st.session_state.emp_page += 1
-            st.rerun()
-        # --- END OF PAGINATION BLOCK ---
 
 # Manager self-rating form
 elif st.session_state.mgr_section == "Self-Evaluation":
@@ -214,7 +216,7 @@ elif st.session_state.mgr_section == "Self-Evaluation":
             SELECT criteria, score, timestamp FROM user_ratings
             WHERE rater = %s AND ratee = %s AND rating_type = 'self'
             ORDER BY timestamp DESC
-        """, (name, name))
+        """, (email, email))
         self_ratings = cursor.fetchall()
 
         # --- Quarterly System Implementation ---
@@ -231,7 +233,7 @@ elif st.session_state.mgr_section == "Self-Evaluation":
             SELECT criteria, score, timestamp FROM user_ratings
             WHERE rater = %s AND ratee = %s AND rating_type = 'self' AND quarter = %s
             ORDER BY timestamp DESC
-        """, (name, name, selected_quarter))
+        """, (email, email, selected_quarter))
         self_ratings = cursor.fetchall()
 
         all_criteria = [crit for crit, _ in development_criteria + other_aspects_criteria + foundational_criteria + futuristic_criteria]
@@ -273,7 +275,7 @@ elif st.session_state.mgr_section == "Self-Evaluation":
             # Fetch self remark for the selected quarter
             cursor.execute(
                 "SELECT remark FROM remarks WHERE rater = %s AND ratee = %s AND rating_type = 'self' AND quarter = %s;",
-                (name, name, selected_quarter)
+                (email, email, selected_quarter)
             )
             feedback = cursor.fetchone()
             st.subheader("Remark:")
@@ -345,7 +347,7 @@ elif st.session_state.mgr_section == "Self-Evaluation":
                 # Check for already submitted criteria one last time to prevent duplicates
                 cursor.execute(
                     "SELECT criteria FROM user_ratings WHERE rater = %s AND rating_type = 'self' AND quarter = %s AND year = %s",
-                    (name, selected_quarter, current_year)
+                    (email, selected_quarter, current_year)
                 )
                 already_submitted = {row[0] for row in cursor.fetchall()}
 
@@ -354,7 +356,7 @@ elif st.session_state.mgr_section == "Self-Evaluation":
                     if crit not in already_submitted:
                         cursor.execute(
                             "INSERT INTO user_ratings (rater, ratee, role, criteria, score, rating_type, quarter, year) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
-                            (name, name, role, crit, score, "self", selected_quarter, current_year)
+                            (email, email, role, crit, score, "self", selected_quarter, current_year)
                         )
                 db.commit()
                 self_submit()

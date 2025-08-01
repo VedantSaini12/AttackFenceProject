@@ -45,6 +45,7 @@ if "token" in st.query_params:
             # Token is valid, re-establish the session
             st.session_state["name"] = token_data['username']
             st.session_state["role"] = token_data['role']
+            st.session_state["email"] = token_data['email']
             # The existing auto-login logic below will now trigger the redirect
         else:
             # Token has expired, remove it from the store and the URL
@@ -61,10 +62,12 @@ if st.session_state.get("name"):
         st.switch_page("pages/1_Employee_Dashboard.py")
     elif role == 'manager':
         st.switch_page("pages/2_Manager_Dashboard.py")
-    elif role == 'HR':
+    elif role == 'hr':
         st.switch_page("pages/3_HR_Dashboard.py")
     elif role == 'admin':
         st.switch_page("pages/4_Admin_Panel.py")
+    elif role == 'super_manager':
+        st.switch_page("pages/5_Super_Manager_Dashboard.py")
 
 # --- LOAD ASSETS ---
 # Paths to your logo parts
@@ -242,6 +245,11 @@ with col2:
             cursor.execute("SELECT * FROM users WHERE Email = %s", (email,))
             user = cursor.fetchone()
 
+            # Check if the user is dormant BEFORE checking the password.
+            if user and user[6]: 
+                error_placeholder.error("Your account has been deactivated.")
+                st.stop()
+
             # Case 1: User email does not exist in the database at all.
             if not user:
                 error_placeholder.warning("⚠️ User not found. Please check your email and try again.")
@@ -253,14 +261,17 @@ with col2:
                 db.commit()
 
                 # --- This is your existing success logic, no changes needed here ---
+                user_email = user[1] # Get email from the query result
                 username = user[5]
                 user_role = user[3]
                 new_token = str(uuid.uuid4())
                 st.session_state["name"] = username
+                st.session_state["email"] = user_email # ADD THIS LINE
                 st.session_state["role"] = user_role
                 st.session_state["token"] = new_token
                 token_store[new_token] = {
                     "username": username,
+                    "email": user_email, # ADD THIS LINE
                     "role": user_role,
                     "timestamp": now
                 }
@@ -269,10 +280,12 @@ with col2:
                     st.switch_page("pages/1_Employee_Dashboard.py")
                 elif user_role == 'manager':
                     st.switch_page("pages/2_Manager_Dashboard.py")
-                elif user_role == 'HR':
+                elif user_role == 'hr':
                     st.switch_page("pages/3_HR_Dashboard.py")
                 elif user_role == 'admin':
                     st.switch_page("pages/4_Admin_Panel.py")
+                elif user_role == 'super_manager': # <-- ADD THIS
+                    st.switch_page("pages/5_Super_Manager_Dashboard.py") # <-- ADD THIS
                 else:
                     st.error("Unknown user role. Please contact support.")
 

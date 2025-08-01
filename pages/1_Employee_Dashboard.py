@@ -20,10 +20,11 @@ db = get_db_connection()
 token_store = get_token_store()
 
 name = st.session_state["name"]
+email = st.session_state["email"]
 role = st.session_state["role"]
-cursor = db.cursor()
+cursor = db.cursor(buffered=True)
 
-notification_bell_component(st.session_state.name)
+notification_bell_component()
 
 # --- SIDEBAR NAVIGATION ---
 
@@ -77,11 +78,12 @@ if st.session_state.emp_section == "Dashboard":
         st.subheader("Ratings Received")
         # Fetch all ratings for the employee
         cursor.execute("""
-            SELECT rater, role, criteria, score, rating_type, timestamp
-            FROM user_ratings
-            WHERE ratee = %s
-            ORDER BY timestamp DESC
-        """, (name,))
+            SELECT u.username as rater_name, r.role, r.criteria, r.score, r.rating_type, r.timestamp
+            FROM user_ratings r
+            JOIN users u ON r.rater = u.email
+            WHERE r.ratee = %s
+            ORDER BY r.timestamp DESC
+        """, (email,))
         ratings = cursor.fetchall()
 
         # Separate ratings by admin and manager
@@ -130,7 +132,7 @@ if st.session_state.emp_section == "Dashboard":
                 # --- END OF MISSING LOGIC ---
                 
                 st.divider()
-                cursor.execute("SELECT remark FROM remarks WHERE ratee = %s AND rating_type = 'manager';", (name, ))
+                cursor.execute("SELECT remark FROM remarks WHERE ratee = %s AND rating_type = 'manager';", (email, ))
                 feedback = cursor.fetchone()
                 st.subheader("Remark:")
                 if feedback:
@@ -175,7 +177,11 @@ if st.session_state.emp_section == "Dashboard":
                 SELECT criteria, score, timestamp FROM user_ratings
                 WHERE rater = %s AND ratee = %s AND rating_type = 'self' AND quarter = %s AND year = %s
                 ORDER BY timestamp DESC
+<<<<<<< HEAD
             """, (name, name, current_quarter, datetime.datetime.now().year))
+=======
+            """, (email, email))
+>>>>>>> 99101beed5e0aa4a1429b5ac20ce857c225eee70
             self_ratings = cursor.fetchall()
             
             foundational_criteria = [
@@ -314,7 +320,7 @@ if st.session_state.emp_section == "Dashboard":
                     # Check for already submitted criteria one last time to prevent duplicates
                     cursor.execute(
                         "SELECT criteria FROM user_ratings WHERE rater = %s AND rating_type = 'self' AND quarter = %s AND year = %s",
-                        (name, current_quarter, current_year)
+                        (email, current_quarter, current_year)
                     )
                     already_submitted = {row[0] for row in cursor.fetchall()}
 
@@ -323,21 +329,26 @@ if st.session_state.emp_section == "Dashboard":
                         if crit not in already_submitted:
                             cursor.execute(
                                 "INSERT INTO user_ratings (rater, ratee, role, criteria, score, rating_type, quarter, year) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
-                                (name, name, role, crit, score, "self", current_quarter, current_year)
+                                (email, email, role, crit, score, "self", current_quarter, current_year)
                             )
                     db.commit()
 
                     # --- Notification Logic ---
-                    cursor.execute("SELECT managed_by FROM users WHERE username = %s", (name,))
+                    cursor.execute("SELECT managed_by FROM users WHERE email = %s", (email,))
                     manager_name_result = cursor.fetchone()
                     if manager_name_result and manager_name_result[0]:
                         manager_name = manager_name_result[0]
-                        add_notification(
-                            recipient=manager_name,
-                            sender=name,
-                            message=f"{name} has completed their self-evaluation for Q{current_quarter} {current_year}.",
-                            notification_type='self_evaluation_completed'
-                        )
+                        # Now get the manager's email
+                        cursor.execute("SELECT email FROM users WHERE username = %s", (manager_name,))
+                        manager_email_result = cursor.fetchone()
+                        if manager_email_result:
+                            manager_email = manager_email_result[0]
+                            add_notification(
+                                recipient=manager_email, # Use email
+                                sender=email,
+                                message=f"{name} has completed their self-evaluation for Q{current_quarter} {current_year}.",
+                                notification_type='self_evaluation_completed'
+                            )
                     # --- End of Notification Logic ---
                     self_submit()
                     st.rerun()
