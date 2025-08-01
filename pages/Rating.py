@@ -168,8 +168,8 @@ with col2:
         # Fetch remark for the SELECTED quarter
         cursor.execute("""
             SELECT remark FROM remarks
-            WHERE ratee = %s AND rating_type = 'manager' AND quarter = %s LIMIT 1
-        """, (employee, selected_quarter))
+            WHERE ratee = %s AND rating_type = 'manager' AND quarter = %s AND year = %s LIMIT 1
+        """, (employee, selected_quarter, datetime.datetime.now().year))
         manager_remark_result = cursor.fetchone()
         manager_remark = manager_remark_result[0] if manager_remark_result else None
 
@@ -220,7 +220,27 @@ with col2:
             """, (employee, selected_quarter))
             employee_submitted_criteria = {row[0] for row in cursor.fetchall()}
             is_self_evaluation_complete = all_criteria_names.issubset(employee_submitted_criteria)
-
+            tooltips = {
+                "Humility": "How well does the employee demonstrate humility in their interactions?",
+                "Integrity": "Does the employee consistently act with integrity and honesty?",
+                "Collegiality": "How well does the employee collaborate with colleagues?",
+                "Attitude": "What is the employee's general attitude towards work and colleagues?",
+                "Time Management": "How effectively does the employee manage their time?",
+                "Initiative": "Does the employee take initiative in their work?",
+                "Communication": "How well does the employee communicate with others?",
+                "Compassion": "Does the employee show compassion towards colleagues and clients?",
+                "Knowledge & Awareness": "How knowledgeable is the employee about their field?",
+                "Future readiness": "Is the employee prepared for future challenges in their role?",
+                "Informal leadership": "Does the employee demonstrate informal leadership qualities?",
+                "Team Development": "How well does the employee contribute to team development?",
+                "Process adherence": "Does the employee adhere to established processes?",
+                "Quality of Work": "How would you rate the overall quality of the employee's work?",
+                "Task Completion": "How effectively does the employee complete assigned tasks?",
+                "Timeline Adherence": "Does the employee adhere to project timelines?",
+                "Collaboration": "How well does the employee collaborate with others?",
+                "Innovation": "Does the employee demonstrate innovation in their work?",
+                "Special Situation": "How does the employee handle special situations or challenges?"
+            }
             # Only show the rating form if the viewer is a manager AND the employee has finished their part
             if role == 'manager' and is_self_evaluation_complete:
                 # Fetch employee self-ratings for reference
@@ -235,52 +255,60 @@ with col2:
                 st.markdown("#### Development (70%)")
                 for crit, _ in development_criteria:
                     st.write("")
+                    tooltip_text = tooltips.get(crit, "")
                     all_scores[crit] = st.number_input(
                         f"{crit} (Your Rating)",
                         min_value=0,
                         max_value=10,
                         value=0,
                         step=1,
-                        key=f"input_{crit}"
+                        key=f"input_{crit}",
+                        help = tooltip_text
                     )
                 st.write("")
   
                 # --- Foundational Progress Section ---
                 st.markdown("#### Foundational Progress")
                 for crit, _ in foundational_criteria:
+                    tooltip_text = tooltips.get(crit, "")
                     all_scores[crit] = st.number_input(
                         f"{crit} (Your Rating)",
                         min_value=0,
                         max_value=10,
                         value=0,
                         step=1,
-                        key=f"input_{crit}"
+                        key=f"input_{crit}",
+                        help=tooltip_text
                     )
                 st.write("")
                 st.write("")
                 # --- Other Aspects Section ---
                 st.markdown("#### Other Aspects (30%)")
                 for crit, _ in other_aspects_criteria:
+                    tooltip_text = tooltips.get(crit, "")
                     all_scores[crit] = st.number_input(
                         f"{crit} (Your Rating)",
                         min_value=0,
                         max_value=10,
                         value=0,
                         step=1,
-                        key=f"input_{crit}"
+                        key=f"input_{crit}",
+                        help=tooltip_text
                     )
                 st.write("")
                 st.write("")
                 # --- Futuristic Progress Section ---
                 st.markdown("#### Futuristic Progress")
                 for crit, _ in futuristic_criteria:
+                    tooltip_text = tooltips.get(crit, "")
                     all_scores[crit] = st.number_input(
                         f"{crit} (Your Rating)",
                         min_value=0,
                         max_value=10,
                         value=0,
                         step=1,
-                        key=f"input_{crit}"
+                        key=f"input_{crit}",
+                        help=tooltip_text
                     )
 
                 remark = st.text_area("Add Overall Remark", key=f"remark_{employee}_{selected_quarter}")

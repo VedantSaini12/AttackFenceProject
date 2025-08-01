@@ -141,6 +141,27 @@ if st.session_state.emp_section == "Dashboard":
                 st.info("No manager remarks received yet.")
 
     with col2:
+        tooltips = {
+                "Humility": "How well does the employee demonstrate humility in their interactions?",
+                "Integrity": "Does the employee consistently act with integrity and honesty?",
+                "Collegiality": "How well does the employee collaborate with colleagues?",
+                "Attitude": "What is the employee's general attitude towards work and colleagues?",
+                "Time Management": "How effectively does the employee manage their time?",
+                "Initiative": "Does the employee take initiative in their work?",
+                "Communication": "How well does the employee communicate with others?",
+                "Compassion": "Does the employee show compassion towards colleagues and clients?",
+                "Knowledge & Awareness": "How knowledgeable is the employee about their field?",
+                "Future readiness": "Is the employee prepared for future challenges in their role?",
+                "Informal leadership": "Does the employee demonstrate informal leadership qualities?",
+                "Team Development": "How well does the employee contribute to team development?",
+                "Process adherence": "Does the employee adhere to established processes?",
+                "Quality of Work": "How would you rate the overall quality of the employee's work?",
+                "Task Completion": "How effectively does the employee complete assigned tasks?",
+                "Timeline Adherence": "Does the employee adhere to project timelines?",
+                "Collaboration": "How well does the employee collaborate with others?",
+                "Innovation": "Does the employee demonstrate innovation in their work?",
+                "Special Situation": "How does the employee handle special situations or challenges?"
+            }
         st.subheader("Submit Your Self-Evaluation")
         with st.expander("Open Self-Evaluation Form", expanded=True):
             # Your existing, detailed self-rating form logic goes here.
@@ -152,9 +173,9 @@ if st.session_state.emp_section == "Dashboard":
             # Self-rating form in an expander (dropdown style)
             cursor.execute("""
                 SELECT criteria, score, timestamp FROM user_ratings
-                WHERE rater = %s AND ratee = %s AND rating_type = 'self'
+                WHERE rater = %s AND ratee = %s AND rating_type = 'self' AND quarter = %s AND year = %s
                 ORDER BY timestamp DESC
-            """, (name, name))
+            """, (name, name, current_quarter, datetime.datetime.now().year))
             self_ratings = cursor.fetchall()
             
             foundational_criteria = [
@@ -225,37 +246,45 @@ if st.session_state.emp_section == "Dashboard":
                 st.markdown("#### Development (70%)")
                 for crit, weight in development_criteria:
                     if crit not in submitted_criteria:
+                        tooltip_text = tooltips.get(crit, "")
                         all_scores[crit] = st.number_input(
                             f"{crit} ({weight}%)",
                             min_value=0,
                             max_value=10,
                             value=0,
                             step=1,
-                            key=f"{name}_{crit}_dev_self"
+                            key=f"{name}_{crit}_dev_self",
+                            help=tooltip_text
                         )
 
                 st.markdown("#### Other Aspects (30%)")
                 for crit, weight in other_aspects_criteria:
                     if crit not in submitted_criteria:
+                        tooltip_text = tooltips.get(crit, "")
+
                         all_scores[crit] = st.number_input(
                             f"{crit} ({weight}%)",
                             min_value=0,
                             max_value=10,
                             value=0,
                             step=1,
-                            key=f"{name}_{crit}_other_self"
+                            key=f"{name}_{crit}_other_self",
+                            help=tooltip_text
                         )
 
                 st.markdown("#### Foundational Progress")
                 for crit, weight in foundational_criteria:
                     if crit not in submitted_criteria:
+                        tooltip_text = tooltips.get(crit, "")
+
                         all_scores[crit] = st.number_input(
                             f"{crit} ({weight}%)",
                             min_value=0,
                             max_value=10,
                             value=0,
                             step=1,
-                            key=f"{name}_{crit}_found_self"
+                            key=f"{name}_{crit}_found_self",
+                            help=tooltip_text
                         )
 
                 st.markdown("#### Futuristic Progress")
@@ -267,7 +296,8 @@ if st.session_state.emp_section == "Dashboard":
                             max_value=10,
                             value=0,
                             step=1,
-                            key=f"{name}_{crit}_fut_self"
+                            key=f"{name}_{crit}_fut_self",
+                            help=tooltips.get(crit, "")
                         )
                 
                 @st.dialog("Confirmation")

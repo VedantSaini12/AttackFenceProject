@@ -1,4 +1,7 @@
 import streamlit as st
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
 import datetime
 from collections import defaultdict
 from core.auth import protect_page, get_db_connection
@@ -66,9 +69,9 @@ def render_evaluation_details(ratings, remark_data, criteria_list):
 
 
     ratings_dict = {r['criteria']: r['score'] for r in ratings}
-
+    st.markdown("<br />", unsafe_allow_html=True)
     for category_name, criteria in criteria_list.items():
-        st.markdown(f"<h6>{category_name}</h6>", unsafe_allow_html=True)
+        st.markdown(f"<h4>{category_name}</h4>", unsafe_allow_html=True)
         for crit_info in criteria:
             crit_name = crit_info[0]
             score = ratings_dict.get(crit_name)
@@ -149,14 +152,57 @@ if selected_user:
             evaluations_by_year[p['year']].append(p['quarter'])
 
         all_criteria_groups = {
-            "Development (70%)": development_criteria,
-            "Other Aspects (30%)": other_aspects_criteria,
+            "Development": development_criteria,
+            "Other Aspects": other_aspects_criteria,
             "Foundational Progress": foundational_criteria,
             "Futuristic Progress": futuristic_criteria
         }
 
         for year, quarters in evaluations_by_year.items():
             with st.expander(f"🗓️ Evaluations from {year}", expanded=(year == datetime.datetime.now().year)):
+                query = """
+SELECT
+    id,
+    rater,
+    ratee,
+    role,
+    criteria,
+    score,
+    rating_type,
+    timestamp,
+    quarter,
+    year
+FROM user_ratings
+WHERE criteria IS NOT NULL AND score IS NOT NULL AND ratee = %s;
+"""
+                df = pd.read_sql_query(query, db, params=(selected_user,))
+
+                
+
+                # 4. Preprocessing
+                df['timestamp'] = pd.to_datetime(df['timestamp'])
+                print(df)
+                df['year_quarter'] = df['year'].astype(str) + ' Q' + df['quarter'].astype(str)
+                df = df.sort_values(by=['year', 'quarter'])
+
+                # 5. Streamlit UI – choose criteria
+                selected_criteria = st.selectbox("Select a criteria", df['criteria'].unique())
+
+                # 6. Filter by that criteria
+                filtered_df = df[df['criteria'] == selected_criteria]
+                print(filtered_df.head())
+
+                # 7. Plotting
+                st.subheader(f"Score Trend for: '{selected_criteria}'")
+
+                plt.figure(figsize=(10,2))
+                sns.lineplot(data=filtered_df, x='year_quarter', y='score', marker='o', hue='rating_type', markers=True, dashes=False)
+                plt.xticks(rotation=45)
+                plt.xlabel("Quarter")
+                plt.ylabel("Score")
+                plt.ylim(0, 10)
+                plt.title(f"{selected_criteria} Score Over Time")
+                st.pyplot(plt)
                 for quarter in quarters:
                     st.markdown(f"<h4>Quarter {quarter}</h4>", unsafe_allow_html=True)
                     col1, col2 = st.columns(2)
@@ -164,7 +210,7 @@ if selected_user:
                     # --- Self-Evaluation Column ---
                     with col1:
                         with st.container(border=True):
-                            st.markdown("<h5>👤 Self-Evaluation</h5>", unsafe_allow_html=True)
+                            st.markdown("<center><h3>👤 Self-Evaluation</h3></center>", unsafe_allow_html=True)
                             # CORRECTED QUERY: Filter by year and quarter
                             cursor.execute("SELECT rater, criteria, score, timestamp FROM user_ratings WHERE ratee = %s AND rating_type = 'self' AND year = %s AND quarter = %s", (selected_user, year, quarter))
                             self_ratings = cursor.fetchall()
@@ -176,7 +222,7 @@ if selected_user:
                     # --- Manager Evaluation Column ---
                     with col2:
                         with st.container(border=True):
-                            st.markdown("<h5>👔 Manager's Evaluation</h5>", unsafe_allow_html=True)
+                            st.markdown("<center><h3>👔 Manager's Evaluation</h3></center>", unsafe_allow_html=True)
                             # CORRECTED QUERY: Filter by year and quarter
                             cursor.execute("SELECT rater, criteria, score, timestamp FROM user_ratings WHERE ratee = %s AND rating_type = 'manager' AND year = %s AND quarter = %s", (selected_user, year, quarter))
                             mgr_ratings = cursor.fetchall()
