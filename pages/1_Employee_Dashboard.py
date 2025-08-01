@@ -177,11 +177,7 @@ if st.session_state.emp_section == "Dashboard":
                 SELECT criteria, score, timestamp FROM user_ratings
                 WHERE rater = %s AND ratee = %s AND rating_type = 'self' AND quarter = %s AND year = %s
                 ORDER BY timestamp DESC
-<<<<<<< HEAD
             """, (name, name, current_quarter, datetime.datetime.now().year))
-=======
-            """, (email, email))
->>>>>>> 99101beed5e0aa4a1429b5ac20ce857c225eee70
             self_ratings = cursor.fetchall()
             
             foundational_criteria = [
